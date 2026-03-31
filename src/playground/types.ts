@@ -17,6 +17,10 @@ export interface PlaygroundSettings {
   dragStiffness: number;
   createPointMass: number;
   createPointPinned: boolean;
+  createPointLayerNegativeOne: boolean;
+  createPointLayerZero: boolean;
+  createPointLayerOne: boolean;
+  createConstraintLayer: "auto" | -1 | 0 | 1;
 }
 
 export interface CameraState {
@@ -44,4 +48,8 @@ export const DEFAULT_SETTINGS: PlaygroundSettings = {
   dragStiffness: 0.18,
   createPointMass: 1,
   createPointPinned: false,
+  createPointLayerNegativeOne: false,
+  createPointLayerZero: true,
+  createPointLayerOne: false,
+  createConstraintLayer: "auto",
 };

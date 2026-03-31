@@ -188,6 +188,30 @@ input {
   accent-color: var(--accent);
 }
 
+.layer-setting {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid rgba(66, 82, 118, 0.45);
+  border-radius: 10px;
+  background: rgba(13, 15, 20, 0.45);
+}
+
+.layer-setting__label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.layer-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.84rem;
+}
+
 .workspace {
   min-height: 0;
   display: grid;
@@ -592,9 +616,37 @@ input {
   color: #ffd9df;
 }
 
-.charts-warning strong {
-  display: block;
+.charts-warning__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
   margin-bottom: 0.35rem;
+}
+
+.charts-warning__header strong {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.charts-warning__dismiss {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: -0.2rem -0.15rem 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.charts-warning__dismiss:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .charts-warning__list {

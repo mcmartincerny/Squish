@@ -1,4 +1,4 @@
-import type { PhysicsWorld, PointId } from "../engine/index.ts";
+import type { LayerId, PhysicsWorld, PointId } from "../engine/index.ts";
 import type { PlaygroundSettings } from "./types.ts";
 
 interface SpawnOptions {
@@ -27,14 +27,18 @@ export function loadEmptyScene(world: PhysicsWorld, settings: PlaygroundSettings
   syncWorldConfig(world, settings);
 }
 
-export function spawnSquare(options: SpawnOptions): void {
+interface ShapeSpawnOverrides {
+  layers?: LayerId[];
+}
+
+export function spawnSquare(options: SpawnOptions, spawnOverrides?: ShapeSpawnOverrides): void {
   const { world, settings, centerX, centerY } = options;
   const halfSize = 70;
   const points = [
-    createPoint(world, settings, centerX - halfSize, centerY - halfSize),
-    createPoint(world, settings, centerX + halfSize, centerY - halfSize),
-    createPoint(world, settings, centerX + halfSize, centerY + halfSize),
-    createPoint(world, settings, centerX - halfSize, centerY + halfSize),
+    createPoint(world, settings, centerX - halfSize, centerY - halfSize, spawnOverrides),
+    createPoint(world, settings, centerX + halfSize, centerY - halfSize, spawnOverrides),
+    createPoint(world, settings, centerX + halfSize, centerY + halfSize, spawnOverrides),
+    createPoint(world, settings, centerX - halfSize, centerY + halfSize, spawnOverrides),
   ];
 
   connectLoop(world, points, settings);
@@ -42,25 +46,25 @@ export function spawnSquare(options: SpawnOptions): void {
   connect(world, points[1], points[3], settings);
 }
 
-export function spawnTriangle(options: SpawnOptions): void {
+export function spawnTriangle(options: SpawnOptions, spawnOverrides?: ShapeSpawnOverrides): void {
   const { world, settings, centerX, centerY } = options;
   const radius = 85;
   const points = [0, 1, 2].map((index) => {
     const angle = -Math.PI / 2 + (Math.PI * 2 * index) / 3;
-    return createPoint(world, settings, centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius);
+    return createPoint(world, settings, centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius, spawnOverrides);
   });
 
   connectLoop(world, points, settings);
 }
 
-export function spawnCircle(options: SpawnOptions): void {
+export function spawnCircle(options: SpawnOptions, spawnOverrides?: ShapeSpawnOverrides): void {
   const { world, settings, centerX, centerY } = options;
   const segments = 12;
   const radius = 95;
-  const centerPoint = createPoint(world, settings, centerX, centerY);
+  const centerPoint = createPoint(world, settings, centerX, centerY, spawnOverrides);
   const ringPoints = Array.from({ length: segments }, (_, index) => {
     const angle = (Math.PI * 2 * index) / segments;
-    return createPoint(world, settings, centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius);
+    return createPoint(world, settings, centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius, spawnOverrides);
   });
 
   connectLoop(world, ringPoints, settings);
@@ -77,7 +81,7 @@ interface ShapeOptions {
 }
 
 /** Axis-aligned square outline filled with a regular grid triangulated by alternating diagonals (two triangles per quad). */
-export function spawnSquareTriMesh(options: SpawnOptions, shapeOptions?: ShapeOptions): void {
+export function spawnSquareTriMesh(options: SpawnOptions, shapeOptions?: ShapeOptions, spawnOverrides?: ShapeSpawnOverrides): void {
   const { world, settings, centerX, centerY } = options;
   const columns = shapeOptions?.columns ?? 5;
   const rows = shapeOptions?.rows ?? 5;
@@ -89,7 +93,7 @@ export function spawnSquareTriMesh(options: SpawnOptions, shapeOptions?: ShapeOp
   for (let row = 0; row < rows; row += 1) {
     const rowPoints: PointId[] = [];
     for (let column = 0; column < columns; column += 1) {
-      rowPoints.push(createPoint(world, settings, centerX - width / 2 + column * spacing, centerY - height / 2 + row * spacing));
+      rowPoints.push(createPoint(world, settings, centerX - width / 2 + column * spacing, centerY - height / 2 + row * spacing, spawnOverrides));
     }
     pointIds.push(rowPoints);
   }
@@ -120,6 +124,7 @@ export function spawnSquareTriMesh(options: SpawnOptions, shapeOptions?: ShapeOp
 export function spawnDenseGrid(
   options: SpawnOptions,
   shapeOptions?: ShapeOptions,
+  spawnOverrides?: ShapeSpawnOverrides,
 ): void {
   const { world, settings, centerX, centerY } = options;
   const columns = shapeOptions?.columns ?? 6;
@@ -133,7 +138,7 @@ export function spawnDenseGrid(
     const rowPoints: PointId[] = [];
 
     for (let column = 0; column < columns; column += 1) {
-      rowPoints.push(createPoint(world, settings, centerX - width / 2 + column * spacing, centerY - height / 2 + row * spacing));
+      rowPoints.push(createPoint(world, settings, centerX - width / 2 + column * spacing, centerY - height / 2 + row * spacing, spawnOverrides));
     }
 
     pointIds.push(rowPoints);
@@ -166,7 +171,7 @@ export function spawnDenseGrid(
   }
 }
 
-export function spawnPyramid(options: SpawnOptions): void {
+export function spawnPyramid(options: SpawnOptions, spawnOverrides?: ShapeSpawnOverrides): void {
   const { world, settings, centerX, centerY } = options;
   const rows = 6;
   const s = 68;
@@ -178,7 +183,7 @@ export function spawnPyramid(options: SpawnOptions): void {
     for (let col = 0; col <= row; col += 1) {
       const x = centerX + (col - row / 2) * s;
       const y = centerY - ((rows - 1) * rowHeight) / 2 + row * rowHeight;
-      rowPoints.push(createPoint(world, settings, x, y));
+      rowPoints.push(createPoint(world, settings, x, y, spawnOverrides));
     }
     pointIds.push(rowPoints);
   }
@@ -289,12 +294,96 @@ export function loadBridgeValidationScene(world: PhysicsWorld, settings: Playgro
   );
 }
 
-function createPoint(world: PhysicsWorld, settings: PlaygroundSettings, x: number, y: number, pinned = false): PointId {
+export function loadLayerShowcaseScene(world: PhysicsWorld, settings: PlaygroundSettings): void {
+  world.clear();
+  syncWorldConfig(world, settings);
+
+  spawnSquare({
+    world,
+    settings,
+    centerX: settings.worldWidth * 0.2,
+    centerY: settings.worldHeight * 0.24,
+  }, {
+    layers: [-1],
+  });
+
+  spawnCircle({
+    world,
+    settings,
+    centerX: settings.worldWidth * 0.78,
+    centerY: settings.worldHeight * 0.22,
+  }, {
+    layers: [1],
+  });
+
+  const leftAnchor = createPoint(world, settings, settings.worldWidth * 0.25, settings.worldHeight * 0.56, {
+    pinned: true,
+    layers: [0],
+  });
+  const leftMid = createPoint(world, settings, settings.worldWidth * 0.36, settings.worldHeight * 0.58, {
+    layers: [0],
+  });
+  const bridgeLeft = createPoint(world, settings, settings.worldWidth * 0.47, settings.worldHeight * 0.56, {
+    layers: [0, 1],
+  });
+  const bridgeRight = createPoint(world, settings, settings.worldWidth * 0.58, settings.worldHeight * 0.58, {
+    layers: [0, 1],
+  });
+  const rightMid = createPoint(world, settings, settings.worldWidth * 0.69, settings.worldHeight * 0.56, {
+    layers: [1],
+  });
+  const rightAnchor = createPoint(world, settings, settings.worldWidth * 0.8, settings.worldHeight * 0.58, {
+    pinned: true,
+    layers: [1],
+  });
+
+  connect(world, leftAnchor, leftMid, settings);
+  connect(world, leftMid, bridgeLeft, settings);
+  connect(world, bridgeLeft, bridgeRight, settings, {
+    layer: 1,
+  });
+  connect(world, bridgeRight, rightMid, settings);
+  connect(world, rightMid, rightAnchor, settings);
+  connect(world, leftMid, bridgeRight, settings, {
+    layer: 0,
+    stiffness: settings.constraintStiffness * 0.85,
+  });
+  connect(world, bridgeLeft, rightMid, settings, {
+    layer: 1,
+    stiffness: settings.constraintStiffness * 0.85,
+  });
+
+  createPoint(world, settings, settings.worldWidth * 0.47, settings.worldHeight * 0.18, {
+    layers: [0],
+  });
+  createPoint(world, settings, settings.worldWidth * 0.58, settings.worldHeight * 0.18, {
+    layers: [1],
+  });
+}
+
+interface PointCreationOptions {
+  pinned?: boolean;
+  layers?: LayerId[];
+}
+
+interface ConstraintOverrides {
+  stiffness?: number;
+  damping?: number;
+  tearThreshold?: number;
+  collisionRadius?: number;
+  layer?: LayerId;
+}
+
+function createPoint(world: PhysicsWorld, settings: PlaygroundSettings, x: number, y: number, options: boolean | PointCreationOptions = false): PointId {
+  const pinned = typeof options === "boolean" ? options : options.pinned ?? false;
+  const layers = typeof options === "boolean" ? undefined : options.layers;
+
   return world.createPoint({
     position: { x, y },
     mass: pinned ? Number.POSITIVE_INFINITY : 1,
     radius: settings.pointRadius,
     pinned,
+    layers,
   });
 }
 
@@ -303,11 +392,7 @@ function connect(
   pointAId: PointId,
   pointBId: PointId,
   settings: PlaygroundSettings,
-  overrides: {
-    stiffness?: number;
-    damping?: number;
-    tearThreshold?: number;
-  } = {},
+  overrides: ConstraintOverrides = {},
 ): void {
   world.createConstraint({
     pointAId,
@@ -315,7 +400,8 @@ function connect(
     stiffness: overrides.stiffness ?? settings.constraintStiffness,
     damping: overrides.damping ?? settings.constraintDamping,
     tearThreshold: overrides.tearThreshold ?? settings.tearThreshold,
-    collisionRadius: settings.colliderRadius,
+    collisionRadius: overrides.collisionRadius ?? settings.colliderRadius,
+    layer: overrides.layer,
   });
 }
 

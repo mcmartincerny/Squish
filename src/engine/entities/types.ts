@@ -8,6 +8,7 @@ export type Vec2 = Vec2Like;
 export type PointId = number;
 export type ConstraintId = number;
 export type BodyId = number;
+export type LayerId = number;
 
 export interface WorldConfig {
   gravity: Vec2;
@@ -32,6 +33,7 @@ export interface CreatePointOptions {
   mass?: number;
   radius?: number;
   pinned?: boolean;
+  layers?: LayerId[];
 }
 
 export interface SetPointPositionOptions {
@@ -49,6 +51,7 @@ export interface CreateConstraintOptions {
   tearThreshold?: number;
   collisionRadius?: number;
   enabled?: boolean;
+  layer?: LayerId;
 }
 
 export interface ApplyRadialForceOptions {
@@ -65,6 +68,7 @@ export interface PointSnapshot {
   mass: number;
   pinned: boolean;
   bodyId: BodyId;
+  layers: LayerId[];
 }
 
 export interface ConstraintSnapshot {
@@ -79,6 +83,7 @@ export interface ConstraintSnapshot {
   collisionRadius: number;
   stretchRatio: number;
   enabled: boolean;
+  layer: LayerId;
 }
 
 export interface BodySnapshot {
@@ -93,6 +98,7 @@ export interface GridCellSnapshot {
   cellY: number;
   size: number;
   itemCount: number;
+  layer?: LayerId;
 }
 
 export interface WorldSnapshot {

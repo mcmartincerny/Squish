@@ -10,6 +10,7 @@ export type {
   CreatePointOptions,
   CreateWorldOptions,
   GridCellSnapshot,
+  LayerId,
   PhysicsWorld,
   PointId,
   PointSnapshot,

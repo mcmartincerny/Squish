@@ -9,6 +9,7 @@ import type {
   CreatePointOptions,
   CreateWorldOptions,
   GridCellSnapshot,
+  LayerId,
   PhysicsWorld,
   PointId,
   PointSnapshot,
@@ -16,6 +17,7 @@ import type {
   WorldConfig,
   WorldSnapshot,
 } from "../entities/types.ts";
+import { normalizePointLayers, resolveConstraintLayer } from "./layers.ts";
 import { closestPointOnSegment } from "../math/geometry.ts";
 import { cloneVec2, distance } from "../math/vector.ts";
 
@@ -31,6 +33,7 @@ interface PointState {
   radius: number;
   pinned: boolean;
   bodyId: BodyId;
+  layers: LayerId[];
 }
 
 interface ConstraintState {
@@ -43,6 +46,7 @@ interface ConstraintState {
   tearThreshold: number | null;
   collisionRadius: number;
   enabled: boolean;
+  layer: LayerId;
 }
 
 interface BodyState {
@@ -99,6 +103,7 @@ class SoftBodyWorld implements PhysicsWorld {
   createPoint(options: CreatePointOptions): PointId {
     const id = this.points.length;
     const mass = options.pinned ? Number.POSITIVE_INFINITY : Math.max(options.mass ?? 1, EPSILON);
+    const layers = normalizePointLayers(options.layers);
     const point: PointState = {
       id,
       x: options.position.x,
@@ -111,6 +116,7 @@ class SoftBodyWorld implements PhysicsWorld {
       radius: Math.max(0, options.radius ?? this.config.defaultPointRadius),
       pinned: Boolean(options.pinned),
       bodyId: -1,
+      layers,
     };
 
     this.points[id] = point;
@@ -124,6 +130,7 @@ class SoftBodyWorld implements PhysicsWorld {
     const pointB = this.requirePoint(options.pointBId);
     const id = this.constraints.length;
     const restLength = options.length ?? distance({ x: pointA.x, y: pointA.y }, { x: pointB.x, y: pointB.y });
+    const layer = resolveConstraintLayer(pointA.layers, pointB.layers, options.layer);
 
     const constraint: ConstraintState = {
       id,
@@ -135,6 +142,7 @@ class SoftBodyWorld implements PhysicsWorld {
       tearThreshold: options.tearThreshold ?? null,
       collisionRadius: Math.max(0, options.collisionRadius ?? 0),
       enabled: options.enabled ?? true,
+      layer,
     };
 
     this.constraints[id] = constraint;
@@ -249,6 +257,7 @@ class SoftBodyWorld implements PhysicsWorld {
         mass: point.invMass === 0 ? Number.POSITIVE_INFINITY : 1 / point.invMass,
         pinned: point.pinned,
         bodyId: point.bodyId,
+        layers: [...point.layers],
       });
     }
 
@@ -278,6 +287,7 @@ class SoftBodyWorld implements PhysicsWorld {
         collisionRadius: constraint.collisionRadius,
         stretchRatio: currentLength / constraint.restLength,
         enabled: constraint.enabled,
+        layer: constraint.layer,
       });
     }
 
@@ -486,12 +496,16 @@ class SoftBodyWorld implements PhysicsWorld {
       }
 
       this.maxColliderRadius = Math.max(this.maxColliderRadius, constraint.collisionRadius);
-      this.broadphase.insert(constraint.id, {
-        minX: Math.min(pointA.x, pointB.x) - constraint.collisionRadius,
-        minY: Math.min(pointA.y, pointB.y) - constraint.collisionRadius,
-        maxX: Math.max(pointA.x, pointB.x) + constraint.collisionRadius,
-        maxY: Math.max(pointA.y, pointB.y) + constraint.collisionRadius,
-      });
+      this.broadphase.insert(
+        constraint.id,
+        {
+          minX: Math.min(pointA.x, pointB.x) - constraint.collisionRadius,
+          minY: Math.min(pointA.y, pointB.y) - constraint.collisionRadius,
+          maxX: Math.max(pointA.x, pointB.x) + constraint.collisionRadius,
+          maxY: Math.max(pointA.y, pointB.y) + constraint.collisionRadius,
+        },
+        constraint.layer,
+      );
     }
   }
 
@@ -626,7 +640,7 @@ class SoftBodyWorld implements PhysicsWorld {
         continue;
       }
 
-      const candidateConstraintIds = this.broadphase.queryCircle(point.x, point.y, point.radius + this.maxColliderRadius);
+      const candidateConstraintIds = this.broadphase.queryCircle(point.x, point.y, point.radius + this.maxColliderRadius, point.layers);
 
       for (const constraintId of candidateConstraintIds) {
         const constraint = this.constraints[constraintId];
@@ -644,6 +658,11 @@ class SoftBodyWorld implements PhysicsWorld {
 
         if (point.id === pointA.id || point.id === pointB.id) {
           continue;
+        }
+
+        // this might not be necessary and can be removed later coz broadphase already filters by layers
+        if (!point.layers.includes(constraint.layer)) {
+          throw new Error(`Point ${point.id} is not in layer ${constraint.layer}`);
         }
 
         const closestPoint = closestPointOnSegment(point, pointA, pointB);

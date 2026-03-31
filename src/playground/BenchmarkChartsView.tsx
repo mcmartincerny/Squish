@@ -78,6 +78,7 @@ export function BenchmarkChartsView({ onBackToBenchmarkRunner }: BenchmarkCharts
   const [selectedScenarioIds, setSelectedScenarioIds] = useState<string[]>([]);
   const [baselineRunId, setBaselineRunId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [comparisonWarningsDismissed, setComparisonWarningsDismissed] = useState(false);
 
   const realScenarios = useMemo(() => {
     const byId = new Map<string, ScenarioEntry>();
@@ -181,6 +182,12 @@ export function BenchmarkChartsView({ onBackToBenchmarkRunner }: BenchmarkCharts
 
     return nextWarnings;
   }, [realScenarios, runs]);
+
+  const warningsSignature = useMemo(() => warnings.map((w) => w.key).join('|'), [warnings]);
+
+  useEffect(() => {
+    setComparisonWarningsDismissed(false);
+  }, [warningsSignature]);
 
   const trendData = useMemo(() => {
     if (!selectedScenarioId) {
@@ -416,9 +423,19 @@ export function BenchmarkChartsView({ onBackToBenchmarkRunner }: BenchmarkCharts
           </div>
 
           {loadError ? <div className="charts-warning charts-warning--danger">{loadError}</div> : null}
-          {warnings.length > 0 ? (
+          {warnings.length > 0 && !comparisonWarningsDismissed ? (
             <div className="charts-warning charts-warning--danger">
-              <strong>Comparison warnings</strong>
+              <div className="charts-warning__header">
+                <strong>Comparison warnings</strong>
+                <button
+                  type="button"
+                  className="charts-warning__dismiss"
+                  aria-label="Dismiss comparison warnings"
+                  onClick={() => setComparisonWarningsDismissed(true)}
+                >
+                  ×
+                </button>
+              </div>
               <ul className="charts-warning__list">
                 {warnings.map((warning) => (
                   <li key={warning.key}>{warning.message}</li>

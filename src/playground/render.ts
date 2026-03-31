@@ -92,7 +92,7 @@ export function drawWorld(
       continue;
     }
 
-    context.strokeStyle = "rgba(113, 150, 255, 0.38)";
+    context.strokeStyle = getCapsuleColor(constraint.layer);
     context.lineWidth = constraint.collisionRadius * 2;
     context.beginPath();
     context.moveTo(pointA.position.x, pointA.position.y);
@@ -117,7 +117,7 @@ export function drawWorld(
   }
 
   for (const point of snapshot.points) {
-    context.fillStyle = point.pinned ? "#ffd76a" : "#f6f7fb";
+    context.fillStyle = point.pinned ? "#ffd76a" : getPointColor(point.layers);
     context.beginPath();
     context.arc(point.position.x, point.position.y, point.radius, 0, Math.PI * 2);
     context.fill();
@@ -165,6 +165,50 @@ function getConstraintColor(stretchRatio: number): string {
   return mixColor("#54e37b", "#ff5f68", t);
 }
 
+function getPointColor(layers: number[]): string {
+  if (layers.some((layer) => layer < 0)) {
+    return "#ffffff";
+  }
+
+  if (layers.includes(0)) {
+    return "#cccccc";
+  }
+
+  if (layers.includes(1)) {
+    return "#888888";
+  }
+
+  if (layers.includes(2)) {
+    return "#444444";
+  }
+
+  return "#222222";
+}
+
+function getCapsuleColor(layer: number): string {
+  if (layer < 0) {
+    return "rgb(255, 86, 81)";
+  }
+
+  if (layer === 0) {
+    return "rgba(49, 87, 255, 0.38)";
+  }
+
+  if (layer === 1) {
+    return "rgba(63, 255, 46, 0.38)";
+  }
+
+  if (layer === 2) {
+    return "rgba(240, 255, 26, 0.38)";
+  }
+
+  if (layer === 3) {
+    return "rgba(225, 0, 255, 0.38)";
+  }
+
+  return "rgba(68, 68, 68, 0.38)";
+}
+
 function mixColor(fromHex: string, toHex: string, t: number): string {
   const from = hexToRgb(fromHex);
   const to = hexToRgb(toHex);
@@ -180,3 +224,4 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
     b: Number.parseInt(hex.slice(5, 7), 16),
   };
 }
+

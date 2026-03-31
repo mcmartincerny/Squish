@@ -1,15 +1,10 @@
+import type { GridCellSnapshot, LayerId } from "../entities/types.ts";
+
 interface EntryBounds {
   minX: number
   minY: number
   maxX: number
   maxY: number
-}
-
-interface GridCellSnapshot {
-  cellX: number
-  cellY: number
-  size: number
-  itemCount: number
 }
 
 export class SpatialHashGrid {
@@ -29,7 +24,7 @@ export class SpatialHashGrid {
     this.cells.clear()
   }
 
-  insert(id: number, bounds: EntryBounds): void {
+  insert(id: number, bounds: EntryBounds, layer: LayerId): void {
     const minCellX = Math.floor(bounds.minX / this.cellSize)
     const minCellY = Math.floor(bounds.minY / this.cellSize)
     const maxCellX = Math.floor(bounds.maxX / this.cellSize)
@@ -37,7 +32,7 @@ export class SpatialHashGrid {
 
     for (let cellY = minCellY; cellY <= maxCellY; cellY += 1) {
       for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
-        const key = `${cellX},${cellY}`
+        const key = this.getKey(cellX, cellY, layer)
         const bucket = this.cells.get(key)
 
         if (bucket) {
@@ -49,23 +44,25 @@ export class SpatialHashGrid {
     }
   }
 
-  queryCircle(x: number, y: number, radius: number): number[] {
+  queryCircle(x: number, y: number, radius: number, layers: readonly LayerId[]): number[] {
     const minCellX = Math.floor((x - radius) / this.cellSize)
     const minCellY = Math.floor((y - radius) / this.cellSize)
     const maxCellX = Math.floor((x + radius) / this.cellSize)
     const maxCellY = Math.floor((y + radius) / this.cellSize)
     const seen = new Set<number>()
 
-    for (let cellY = minCellY; cellY <= maxCellY; cellY += 1) {
-      for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
-        const bucket = this.cells.get(`${cellX},${cellY}`)
+    for (const layer of layers) {
+      for (let cellY = minCellY; cellY <= maxCellY; cellY += 1) {
+        for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
+          const bucket = this.cells.get(this.getKey(cellX, cellY, layer))
 
-        if (!bucket) {
-          continue
-        }
+          if (!bucket) {
+            continue
+          }
 
-        for (const id of bucket) {
-          seen.add(id)
+          for (const id of bucket) {
+            seen.add(id)
+          }
         }
       }
     }
@@ -77,16 +74,21 @@ export class SpatialHashGrid {
     const cells: GridCellSnapshot[] = []
 
     for (const [key, bucket] of this.cells) {
-      const [cellXString, cellYString] = key.split(',')
+      const [cellXString, cellYString, layerString] = key.split(',')
 
       cells.push({
         cellX: Number(cellXString),
         cellY: Number(cellYString),
         size: this.cellSize,
         itemCount: bucket.length,
+        layer: Number(layerString),
       })
     }
 
     return cells
+  }
+
+  private getKey(cellX: number, cellY: number, layer: LayerId): string {
+    return `${cellX},${cellY},${layer}`
   }
 }

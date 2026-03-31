@@ -6,6 +6,13 @@ import { SimulationCanvas, type SimulationFrameReport } from './SimulationCanvas
 import { BENCHMARK_SCENARIOS, getBenchmarkScenarioById } from './benchmarkScenarios.ts';
 import { findConstraintAt, findPointAt, getPreviewLine } from './hitTesting.ts';
 import {
+  canCreateConstraintBetween,
+  findPointSnapshotById,
+  getCreateConstraintLayer,
+  getCreatePointLayers,
+  getPreviewConstraintColor,
+} from './layers.ts';
+import {
   createRollingMetricsWindow,
   finalizeRollingMetrics,
   recordFrameMetrics,
@@ -17,6 +24,7 @@ import {
   loadCapsuleEndpointValidationScene,
   loadDefaultScene,
   loadEmptyScene,
+  loadLayerShowcaseScene,
   loadWallsValidationScene,
   spawnCircle,
   spawnDenseGrid,
@@ -354,6 +362,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
           previousPosition: pointerWorld,
           pinned: true,
           radius: 0,
+          layers: targetPoint.layers,
         });
         const constraintId = world.createConstraint({
           pointAId: targetPoint.id,
@@ -362,6 +371,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
           stiffness: settingsRef.current.dragStiffness,
           damping: settingsRef.current.constraintDamping,
           collisionRadius: 0,
+          layer: targetPoint.layers[0],
         });
 
         interactionRef.current = {
@@ -399,6 +409,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
           mass: settingsRef.current.createPointPinned ? Number.POSITIVE_INFINITY : settingsRef.current.createPointMass,
           radius: settingsRef.current.pointRadius,
           pinned: settingsRef.current.createPointPinned,
+          layers: getCreatePointLayers(settingsRef.current),
         });
         break;
       }
@@ -445,9 +456,16 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
       return;
     }
 
+    const startPoint = findPointSnapshotById(snapshot, startPointId);
     const targetPoint = findPointAt(snapshot, pointerWorld, POINT_HIT_RADIUS_PIXELS / camera.zoom);
+    const requestedLayer = getCreateConstraintLayer(settingsRef.current);
 
-    if (targetPoint && targetPoint.id !== startPointId) {
+    if (
+      startPoint
+      && targetPoint
+      && targetPoint.id !== startPointId
+      && canCreateConstraintBetween(startPoint, targetPoint, requestedLayer)
+    ) {
       world.createConstraint({
         pointAId: startPointId,
         pointBId: targetPoint.id,
@@ -455,6 +473,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
         damping: settingsRef.current.constraintDamping,
         tearThreshold: settingsRef.current.tearThreshold,
         collisionRadius: settingsRef.current.colliderRadius,
+        layer: requestedLayer,
       });
     }
 
@@ -482,6 +501,21 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
     const snapshot = snapshotRef.current;
     const pointerWorld = pointerRef.current.world;
     const previewPointId = interactionRef.current.pendingConstraintStartPointId ?? interactionRef.current.dragSourcePointId;
+    const hoveredPointId =
+      snapshot && pointerWorld && mouseModeRef.current === 'createConstraint'
+        ? findPointAt(snapshot, pointerWorld, POINT_HIT_RADIUS_PIXELS / camera.zoom)?.id ?? null
+        : null;
+    const previewColor =
+      snapshot && mouseModeRef.current === 'createConstraint'
+        ? getPreviewConstraintColor(
+            snapshot,
+            interactionRef.current.pendingConstraintStartPointId,
+            hoveredPointId,
+            getCreateConstraintLayer(settingsRef.current),
+          )
+        : interactionRef.current.pendingConstraintStartPointId !== null
+          ? '#ffd76a'
+          : '#ff9f4d';
 
     return {
       pointerWorld: mouseModeRef.current === 'pull' || mouseModeRef.current === 'push' ? pointerWorld : null,
@@ -493,11 +527,11 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
               snapshot,
               previewPointId,
               pointerWorld,
-              interactionRef.current.pendingConstraintStartPointId !== null ? '#ffd76a' : '#ff9f4d',
+              previewColor,
             )
           : null,
     };
-  }, []);
+  }, [camera.zoom]);
 
   return (
     <div className="app-shell">
@@ -523,6 +557,9 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
           </button>
           <button className="toolbar__button" onClick={() => recreateWorld(loadBridgeValidationScene)}>
             Bridge Test
+          </button>
+          <button className="toolbar__button" onClick={() => recreateWorld(loadLayerShowcaseScene)}>
+            Layer Test
           </button>
           <button className="toolbar__button toolbar__button--accent" onClick={onOpenBenchmarkRunner}>
             Benchmark Runner
@@ -601,7 +638,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
             <h2 className="tools-panel__title">Mouse Tools</h2>
             <Tooltip
               label="Tool help"
-              content="Pull and Push affect nearby points while held. Drag creates a temporary spring-like link from a point to the cursor. Create Constraint starts on one point and finishes on another on mouse release. Delete tools remove what you click."
+              content="Pull and Push affect nearby points while held. Drag creates a temporary spring-like link from a point to the cursor. Create Constraint starts on one point and finishes on another on mouse release, but only when the selected layer rules are valid. Delete tools remove what you click."
             />
           </div>
 
@@ -644,6 +681,37 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
                   <span className="control__label">Pinned point</span>
                   <input className="control__checkbox" type="checkbox" checked={settings.createPointPinned} onChange={(event) => updateSetting('createPointPinned', event.target.checked)} />
                 </label>
+                <div className="layer-setting">
+                  <div className="layer-setting__label">Point layers</div>
+                  <label className="layer-option">
+                    <input
+                      className="control__checkbox"
+                      type="checkbox"
+                      checked={settings.createPointLayerNegativeOne}
+                      onChange={(event) => updateSetting('createPointLayerNegativeOne', event.target.checked)}
+                    />
+                    <span>Layer -1</span>
+                  </label>
+                  <label className="layer-option">
+                    <input
+                      className="control__checkbox"
+                      type="checkbox"
+                      checked={settings.createPointLayerZero}
+                      onChange={(event) => updateSetting('createPointLayerZero', event.target.checked)}
+                    />
+                    <span>Layer 0</span>
+                  </label>
+                  <label className="layer-option">
+                    <input
+                      className="control__checkbox"
+                      type="checkbox"
+                      checked={settings.createPointLayerOne}
+                      onChange={(event) => updateSetting('createPointLayerOne', event.target.checked)}
+                    />
+                    <span>Layer 1</span>
+                  </label>
+                </div>
+                <div className="panel-note">No point layer selected falls back to the engine default layer `0`.</div>
               </>
             )}
 
@@ -653,7 +721,22 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
                 <NumberControl label="Constraint damping" min={0} max={50} step={0.5} value={settings.constraintDamping} onChange={(value) => updateSetting('constraintDamping', value)} />
                 <NumberControl label="Capsule radius" min={0} max={24} step={1} value={settings.colliderRadius} onChange={(value) => updateSetting('colliderRadius', value)} />
                 <NumberControl label="Tear threshold" min={1.05} max={4} step={0.05} value={settings.tearThreshold} onChange={(value) => updateSetting('tearThreshold', value)} />
-                <div className="panel-note">Hold from one point and release over another to create a new constraint.</div>
+                <div className="layer-setting">
+                  <div className="layer-setting__label">Constraint layer</div>
+                  {CONSTRAINT_LAYER_OPTIONS.map((option) => (
+                    <label key={option.value} className="layer-option">
+                      <input
+                        className="control__checkbox"
+                        type="radio"
+                        name="constraint-layer"
+                        checked={settings.createConstraintLayer === option.value}
+                        onChange={() => updateSetting('createConstraintLayer', option.value)}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="panel-note">Auto only works when the two points share exactly one layer. Invalid or ambiguous matches are blocked before the engine call.</div>
               </>
             )}
           </div>
@@ -729,4 +812,11 @@ const MOUSE_MODE_OPTIONS: Array<{ value: MouseMode; label: string }> = [
   { value: 'deleteConstraint', label: 'Delete Constraint' },
   { value: 'createPoint', label: 'Create Point' },
   { value: 'createConstraint', label: 'Create Constraint' },
+];
+
+const CONSTRAINT_LAYER_OPTIONS: Array<{ value: 'auto' | -1 | 0 | 1; label: string }> = [
+  { value: 'auto', label: 'Auto' },
+  { value: -1, label: 'Layer -1' },
+  { value: 0, label: 'Layer 0' },
+  { value: 1, label: 'Layer 1' },
 ];
