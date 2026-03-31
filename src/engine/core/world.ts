@@ -646,10 +646,6 @@ class SoftBodyWorld implements PhysicsWorld {
           continue;
         }
 
-        if (point.bodyId === pointA.bodyId && point.bodyId !== -1) {
-          continue;
-        }
-
         const closestPoint = closestPointOnSegment(point, pointA, pointB);
         const deltaX = point.x - closestPoint.x;
         const deltaY = point.y - closestPoint.y;

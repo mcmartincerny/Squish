@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createWorld, type PhysicsWorld } from '../engine/index.ts';
+import { createWorld, type PhysicsWorld, type WorldSnapshot } from '../engine/index.ts';
 import { SimulationCanvas, type SimulationFrameReport } from './SimulationCanvas.tsx';
+import {
+  BENCHMARK_FILE_VERSION,
+  createBenchmarkFilename,
+  createBenchmarkScenarioSignature,
+  normalizeBenchmarkLabel,
+} from './benchmarkFileFormat.ts';
 import { BENCHMARK_SCENARIOS } from './benchmarkScenarios.ts';
-import type { BenchmarkResult, BenchmarkScenario, BenchmarkScenarioCounts } from './benchmarkTypes.ts';
-import { createBenchmarkFilename, summarizeStepDurations } from './simulationMetrics.ts';
+import type { BenchmarkResult, BenchmarkRunFile, BenchmarkScenario, BenchmarkScenarioCounts } from './benchmarkTypes.ts';
+import { summarizeStepDurations } from './simulationMetrics.ts';
 import { fitCameraToWorld } from './render.ts';
 import type { CameraState } from './types.ts';
 
@@ -20,20 +26,27 @@ interface RunnerState {
   phase: RunnerPhase;
   stepsRemaining: number;
   currentSamples: number[];
-  currentCounts: BenchmarkScenarioCounts | null;
+  currentDefinition: RunnerScenarioDefinition | null;
   results: BenchmarkResult[];
 }
 
 interface BenchmarkRunnerProps {
   onBackToPlayground: () => void;
+  onOpenBenchmarkCharts: () => void;
 }
 
-export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
+interface RunnerScenarioDefinition {
+  counts: BenchmarkScenarioCounts;
+  signature: string;
+}
+
+export function BenchmarkRunner({ onBackToPlayground, onOpenBenchmarkCharts }: BenchmarkRunnerProps) {
   const [selectedScenarioIds, setSelectedScenarioIds] = useState<string[]>(BENCHMARK_SCENARIOS.map((scenario) => scenario.id));
   const [results, setResults] = useState<BenchmarkResult[]>([]);
   const [running, setRunning] = useState(false);
   const [statusText, setStatusText] = useState('Select benchmark scenarios and click Run.');
   const [visibleScenarioId, setVisibleScenarioId] = useState<string | null>(BENCHMARK_SCENARIOS[0]?.id ?? null);
+  const [downloadLabel, setDownloadLabel] = useState('');
   const [camera, setCamera] = useState<CameraState>({
     zoom: 1,
     offsetX: 0,
@@ -47,11 +60,12 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
     phase: 'idle',
     stepsRemaining: 0,
     currentSamples: [],
-    currentCounts: null,
+    currentDefinition: null,
     results: [],
   });
   const canvasSizeRef = useRef({ width: 0, height: 0 });
   const pendingFitRef = useRef(false);
+  const normalizedDownloadLabel = normalizeBenchmarkLabel(downloadLabel);
 
   const fitCameraIfPossible = useCallback((scenario: BenchmarkScenario) => {
     if (canvasSizeRef.current.width <= 0 || canvasSizeRef.current.height <= 0) {
@@ -70,8 +84,14 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
     );
   }, []);
 
+  const createScenarioDefinition = useCallback(
+    (scenario: BenchmarkScenario, world: PhysicsWorld): RunnerScenarioDefinition =>
+      createScenarioDefinitionFromSnapshot(scenario, world.getSnapshot()),
+    [],
+  );
+
   const loadScenarioIntoWorld = useCallback(
-    (scenario: BenchmarkScenario, emptyOnly = false) => {
+    (scenario: BenchmarkScenario, emptyOnly = false): RunnerScenarioDefinition | null => {
       const world = createWorld({
         gravity: { x: 0, y: scenario.settings.gravity },
         size: { x: scenario.settings.worldWidth, y: scenario.settings.worldHeight },
@@ -83,15 +103,18 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
         defaultColliderRadius: scenario.settings.colliderRadius,
         gridCellSize: Math.max(scenario.settings.colliderRadius * 4, 48),
       });
+      let definition: RunnerScenarioDefinition | null = null;
 
       if (!emptyOnly) {
         scenario.setup(world);
+        definition = createScenarioDefinition(scenario, world);
       }
 
       worldRef.current = world;
       fitCameraIfPossible(scenario);
+      return definition;
     },
-    [fitCameraIfPossible],
+    [createScenarioDefinition, fitCameraIfPossible],
   );
 
   useEffect(() => {
@@ -117,13 +140,15 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
       return;
     }
 
+    const firstDefinition = loadScenarioIntoWorld(queue[0]);
+
     runnerStateRef.current = {
       queue,
       queueIndex: 0,
       phase: 'warmup',
       stepsRemaining: secondsToSteps(WARMUP_SECONDS),
       currentSamples: [],
-      currentCounts: null,
+      currentDefinition: firstDefinition,
       results: [],
     };
 
@@ -131,7 +156,6 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
     setRunning(true);
     setVisibleScenarioId(queue[0].id);
     setStatusText(`Warmup: ${queue[0].name}`);
-    loadScenarioIntoWorld(queue[0]);
   }, [loadScenarioIntoWorld, selectedScenarioIds]);
 
   const stopRun = useCallback(
@@ -139,6 +163,7 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
       runnerStateRef.current.phase = 'done';
       runnerStateRef.current.stepsRemaining = 0;
       runnerStateRef.current.currentSamples = [];
+      runnerStateRef.current.currentDefinition = null;
       setRunning(false);
       setStatusText(message);
 
@@ -164,10 +189,9 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
       runnerStateRef.current.phase = 'warmup';
       runnerStateRef.current.stepsRemaining = secondsToSteps(WARMUP_SECONDS);
       runnerStateRef.current.currentSamples = [];
-      runnerStateRef.current.currentCounts = null;
+      runnerStateRef.current.currentDefinition = loadScenarioIntoWorld(nextScenario);
       setVisibleScenarioId(nextScenario.id);
       setStatusText(`Warmup: ${nextScenario.name}`);
-      loadScenarioIntoWorld(nextScenario);
     },
     [loadScenarioIntoWorld, stopRun],
   );
@@ -195,11 +219,6 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
         state.stepsRemaining -= report.stepDurationsMs.length;
 
         if (state.stepsRemaining <= 0) {
-          state.currentCounts = {
-            points: report.snapshot.points.length,
-            constraints: report.snapshot.constraints.length,
-            bodies: report.snapshot.bodies.length,
-          };
           state.phase = 'measure';
           state.stepsRemaining = secondsToSteps(MEASURE_SECONDS);
           state.currentSamples = [];
@@ -223,15 +242,15 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
           state.stepsRemaining = 0;
 
           const summary = summarizeStepDurations(state.currentSamples);
+          const definition =
+            state.currentDefinition ?? createScenarioDefinitionFromSnapshot(currentScenario, report.snapshot);
           const nextResult: BenchmarkResult = {
             scenarioId: currentScenario.id,
             scenarioName: currentScenario.name,
             description: currentScenario.description,
-            counts: state.currentCounts ?? {
-              points: report.snapshot.points.length,
-              constraints: report.snapshot.constraints.length,
-              bodies: report.snapshot.bodies.length,
-            },
+            signature: definition.signature,
+            signatureVersion: 'world-setup-v1',
+            counts: definition.counts,
             averageMs: summary.averageMs,
             p99Ms: summary.p99Ms,
             p95Ms: summary.p95Ms,
@@ -253,6 +272,7 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
 
           state.phase = 'cooldown';
           state.stepsRemaining = secondsToSteps(COOLDOWN_SECONDS);
+          state.currentDefinition = null;
           setStatusText(`Cooldown before: ${nextScenario.name}`);
           loadScenarioIntoWorld(nextScenario, true);
         }
@@ -271,21 +291,45 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
     [advanceToNextScenario, loadScenarioIntoWorld, running, stopRun],
   );
 
-  const handleDownloadResults = useCallback(() => {
-    if (results.length === 0) {
-      return;
-    }
+  const handleDownloadResults = useCallback(
+    (includeLabel: boolean) => {
+      if (results.length === 0) {
+        return;
+      }
 
-    const blob = new Blob([JSON.stringify(results, null, 2)], {
-      type: 'application/json',
-    });
-    const link = document.createElement('a');
+      if (includeLabel && !normalizedDownloadLabel) {
+        setStatusText('Enter a custom label before downloading with a label.');
+        return;
+      }
 
-    link.href = URL.createObjectURL(blob);
-    link.download = createBenchmarkFilename();
-    link.click();
-    URL.revokeObjectURL(link.href);
-  }, [results]);
+      const now = new Date();
+      const fileName = createBenchmarkFilename(now, includeLabel ? normalizedDownloadLabel : null);
+      const payload: BenchmarkRunFile = {
+        version: BENCHMARK_FILE_VERSION,
+        generatedAt: now.toISOString(),
+        label: includeLabel ? normalizedDownloadLabel : null,
+        sourceFilename: fileName,
+        runConfig: {
+          warmupSeconds: WARMUP_SECONDS,
+          measureSeconds: MEASURE_SECONDS,
+          cooldownSeconds: COOLDOWN_SECONDS,
+          fixedDt: FIXED_DT,
+        },
+        results,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      });
+      const link = document.createElement('a');
+
+      link.href = URL.createObjectURL(blob);
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setStatusText(`Downloaded ${fileName}`);
+    },
+    [normalizedDownloadLabel, results],
+  );
 
   const visibleScenario = BENCHMARK_SCENARIOS.find((scenario) => scenario.id === visibleScenarioId) ?? BENCHMARK_SCENARIOS[0];
 
@@ -296,12 +340,28 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
           <button className="toolbar__button" onClick={onBackToPlayground}>
             Back To Playground
           </button>
+          <button className="toolbar__button" onClick={onOpenBenchmarkCharts}>
+            Open Charts
+          </button>
           <button className="toolbar__button toolbar__button--accent" disabled={running} onClick={startRun}>
             Run Selected
           </button>
-          <button className="toolbar__button" disabled={results.length === 0} onClick={handleDownloadResults}>
+          <button className="toolbar__button" disabled={results.length === 0} onClick={() => handleDownloadResults(false)}>
             Download Results
           </button>
+          <button
+            className="toolbar__button"
+            disabled={results.length === 0 || normalizedDownloadLabel === null}
+            onClick={() => handleDownloadResults(true)}
+          >
+            Download With Label
+          </button>
+          <input
+            className="toolbar__input"
+            placeholder="Optional run label"
+            value={downloadLabel}
+            onChange={(event) => setDownloadLabel(event.target.value)}
+          />
         </div>
         <div className="runner-toolbar__status">
           <strong>{visibleScenario?.name ?? 'No scenario'}</strong>
@@ -437,4 +497,18 @@ export function BenchmarkRunner({ onBackToPlayground }: BenchmarkRunnerProps) {
 
 function secondsToSteps(seconds: number): number {
   return Math.round(seconds / FIXED_DT);
+}
+
+function createScenarioDefinitionFromSnapshot(
+  scenario: BenchmarkScenario,
+  snapshot: WorldSnapshot,
+): RunnerScenarioDefinition {
+  return {
+    counts: {
+      points: snapshot.points.length,
+      constraints: snapshot.constraints.length,
+      bodies: snapshot.bodies.length,
+    },
+    signature: createBenchmarkScenarioSignature(scenario, snapshot),
+  };
 }

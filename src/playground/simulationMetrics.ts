@@ -93,19 +93,6 @@ export function summarizeStepDurations(stepDurationsMs: number[]): StepSummary {
   };
 }
 
-export function createBenchmarkFilename(date = new Date()): string {
-  const parts = [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
-  ];
-
-  return `Squish_benchmark_${parts.join('_')}.json`;
-}
-
 function getPercentile(sortedValues: number[], percentile: number): number {
   const clampedPercentile = Math.max(0, Math.min(100, percentile));
   const index = (clampedPercentile / 100) * (sortedValues.length - 1);
@@ -118,8 +105,4 @@ function getPercentile(sortedValues: number[], percentile: number): number {
 
   const weight = index - lowerIndex;
   return sortedValues[lowerIndex] + (sortedValues[upperIndex] - sortedValues[lowerIndex]) * weight;
-}
-
-function pad(value: number): string {
-  return String(value).padStart(2, '0');
 }

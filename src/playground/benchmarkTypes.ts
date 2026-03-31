@@ -19,6 +19,8 @@ export interface BenchmarkResult {
   scenarioId: string;
   scenarioName: string;
   description: string;
+  signature: string;
+  signatureVersion: 'world-setup-v1';
   counts: BenchmarkScenarioCounts;
   averageMs: number;
   p99Ms: number;
@@ -27,3 +29,23 @@ export interface BenchmarkResult {
   p1Ms: number;
   samples: number;
 }
+
+export interface BenchmarkRunConfig {
+  warmupSeconds: number;
+  measureSeconds: number;
+  cooldownSeconds: number;
+  fixedDt: number;
+}
+
+export interface BenchmarkRunFile {
+  version: number;
+  generatedAt: string;
+  label: string | null;
+  sourceFilename: string;
+  runConfig: BenchmarkRunConfig;
+  results: BenchmarkResult[];
+}
+
+export type BenchmarkMetricKey = 'averageMs' | 'p99Ms' | 'p95Ms' | 'p5Ms' | 'p1Ms';
+
+export const BENCHMARK_METRICS: BenchmarkMetricKey[] = ['averageMs', 'p99Ms', 'p95Ms', 'p5Ms', 'p1Ms'];
