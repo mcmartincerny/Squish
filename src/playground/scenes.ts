@@ -70,12 +70,18 @@ export function spawnCircle(options: SpawnOptions): void {
   }
 }
 
+interface ShapeOptions {
+  columns?: number;
+  rows?: number;
+  spacing?: number;
+}
+
 /** Axis-aligned square outline filled with a regular grid triangulated by alternating diagonals (two triangles per quad). */
-export function spawnSquareTriMesh(options: SpawnOptions): void {
+export function spawnSquareTriMesh(options: SpawnOptions, shapeOptions?: ShapeOptions): void {
   const { world, settings, centerX, centerY } = options;
-  const columns = 5;
-  const rows = 5;
-  const spacing = 68;
+  const columns = shapeOptions?.columns ?? 5;
+  const rows = shapeOptions?.rows ?? 5;
+  const spacing = shapeOptions?.spacing ?? 68;
   const width = (columns - 1) * spacing;
   const height = (rows - 1) * spacing;
   const pointIds: PointId[][] = [];
@@ -113,16 +119,12 @@ export function spawnSquareTriMesh(options: SpawnOptions): void {
 
 export function spawnDenseGrid(
   options: SpawnOptions,
-  overrides?: {
-    columns?: number;
-    rows?: number;
-    spacing?: number;
-  },
+  shapeOptions?: ShapeOptions,
 ): void {
   const { world, settings, centerX, centerY } = options;
-  const columns = overrides?.columns ?? 6;
-  const rows = overrides?.rows ?? 6;
-  const spacing = overrides?.spacing ?? 68;
+  const columns = shapeOptions?.columns ?? 6;
+  const rows = shapeOptions?.rows ?? 6;
+  const spacing = shapeOptions?.spacing ?? 68;
   const width = (columns - 1) * spacing;
   const height = (rows - 1) * spacing;
   const pointIds: PointId[][] = [];
