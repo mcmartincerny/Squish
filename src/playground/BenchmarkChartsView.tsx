@@ -154,7 +154,7 @@ export function BenchmarkChartsView({ onBackToBenchmarkRunner }: BenchmarkCharts
       const worldCount = new Set(
         scenarioResults.map(
           (entry) =>
-            `${entry.result.counts?.points}:${entry.result.counts?.constraints}:${entry.result.counts?.bodies}`,
+            `${entry.result.counts?.points}:${entry.result.counts?.constraints}`,
         ),
       ).size;
 
@@ -175,7 +175,7 @@ export function BenchmarkChartsView({ onBackToBenchmarkRunner }: BenchmarkCharts
       if (worldCount > 1) {
         nextWarnings.push({
           key: `${scenario.id}-counts`,
-          message: `${scenario.name}: the point, constraint, or body counts differ across runs even though the scenario id matches.`,
+          message: `${scenario.name}: the point or constraint counts differ across runs even though the scenario id matches.`,
         });
       }
     }
@@ -682,8 +682,7 @@ function isBenchmarkCounts(value: unknown): boolean {
 
   return (
     typeof value.points === 'number' &&
-    typeof value.constraints === 'number' &&
-    typeof value.bodies === 'number'
+    typeof value.constraints === 'number'
   );
 }
 
@@ -787,7 +786,7 @@ function createScenarioMetrics(result: BenchmarkResult): ScenarioMetrics {
     p1Ms: result.p1Ms,
     samples: result.samples,
     counts: result.counts,
-    countsLabel: `${result.counts.points}/${result.counts.constraints}/${result.counts.bodies}`,
+    countsLabel: `${result.counts.points}/${result.counts.constraints}`,
     signature: result.signature,
   };
 }

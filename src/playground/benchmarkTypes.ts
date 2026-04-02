@@ -12,7 +12,6 @@ export interface BenchmarkScenario {
 export interface BenchmarkScenarioCounts {
   points: number;
   constraints: number;
-  bodies: number;
 }
 
 export interface BenchmarkResult {

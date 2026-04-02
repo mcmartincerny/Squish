@@ -1,8 +1,6 @@
 import { SpatialHashGrid } from "../collision/spatialHashGrid.ts";
 import type {
   ApplyRadialForceOptions,
-  BodyId,
-  BodySnapshot,
   ConstraintId,
   ConstraintSnapshot,
   CreateConstraintOptions,
@@ -32,7 +30,6 @@ interface PointState {
   invMass: number;
   radius: number;
   pinned: boolean;
-  bodyId: BodyId;
   layers: LayerId[];
 }
 
@@ -47,13 +44,6 @@ interface ConstraintState {
   collisionRadius: number;
   enabled: boolean;
   layer: LayerId;
-}
-
-interface BodyState {
-  id: BodyId;
-  pointIds: PointId[];
-  constraintIds: ConstraintId[];
-  colliderConstraintIds: ConstraintId[];
 }
 
 const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -87,11 +77,8 @@ function toWorldConfig(options: CreateWorldOptions): WorldConfig {
 class SoftBodyWorld implements PhysicsWorld {
   private readonly points: Array<PointState | undefined> = [];
   private readonly constraints: Array<ConstraintState | undefined> = [];
-  private readonly bodies: BodyState[] = [];
   private readonly broadphase: SpatialHashGrid;
 
-  private nextBodyId = 1;
-  private topologyDirty = true;
   private maxColliderRadius = 0;
   private config: WorldConfig;
 
@@ -115,12 +102,10 @@ class SoftBodyWorld implements PhysicsWorld {
       invMass: options.pinned ? 0 : 1 / mass,
       radius: Math.max(0, options.radius ?? this.config.defaultPointRadius),
       pinned: Boolean(options.pinned),
-      bodyId: -1,
       layers,
     };
 
     this.points[id] = point;
-    this.topologyDirty = true;
 
     return id;
   }
@@ -146,7 +131,6 @@ class SoftBodyWorld implements PhysicsWorld {
     };
 
     this.constraints[id] = constraint;
-    this.topologyDirty = true;
 
     return id;
   }
@@ -176,13 +160,11 @@ class SoftBodyWorld implements PhysicsWorld {
       }
     }
 
-    this.topologyDirty = true;
   }
 
   removeConstraint(constraintId: ConstraintId): void {
     this.requireConstraint(constraintId);
     this.constraints[constraintId] = undefined;
-    this.topologyDirty = true;
   }
 
   applyRadialForce(options: ApplyRadialForceOptions): void {
@@ -231,18 +213,11 @@ class SoftBodyWorld implements PhysicsWorld {
   }
 
   getSnapshot(): WorldSnapshot {
-    this.ensureBodiesUpToDate();
     this.rebuildBroadphase();
 
     const points: PointSnapshot[] = [];
     const constraints: ConstraintSnapshot[] = [];
     const gridCells: GridCellSnapshot[] = this.broadphase.getSnapshot();
-    const bodies: BodySnapshot[] = this.bodies.map((body) => ({
-      id: body.id,
-      pointIds: [...body.pointIds],
-      constraintIds: [...body.constraintIds],
-      colliderConstraintIds: [...body.colliderConstraintIds],
-    }));
 
     for (const point of this.points) {
       if (!point) {
@@ -256,7 +231,6 @@ class SoftBodyWorld implements PhysicsWorld {
         radius: point.radius,
         mass: point.invMass === 0 ? Number.POSITIVE_INFINITY : 1 / point.invMass,
         pinned: point.pinned,
-        bodyId: point.bodyId,
         layers: [...point.layers],
       });
     }
@@ -295,7 +269,6 @@ class SoftBodyWorld implements PhysicsWorld {
       config: this.getConfig(),
       points,
       constraints,
-      bodies,
       gridCells,
     };
   }
@@ -305,7 +278,6 @@ class SoftBodyWorld implements PhysicsWorld {
       return;
     }
 
-    this.ensureBodiesUpToDate();
     this.integrate(deltaTime);
     this.rebuildBroadphase();
 
@@ -317,16 +289,12 @@ class SoftBodyWorld implements PhysicsWorld {
 
     this.applyGlobalVelocityDamping(deltaTime);
     this.breakTornConstraints();
-    this.ensureBodiesUpToDate();
   }
 
   clear(): void {
     this.points.length = 0;
     this.constraints.length = 0;
-    this.bodies.length = 0;
-    this.topologyDirty = true;
     this.maxColliderRadius = 0;
-    this.nextBodyId = 1;
     this.broadphase.clear();
   }
 
@@ -348,105 +316,6 @@ class SoftBodyWorld implements PhysicsWorld {
     }
 
     return constraint;
-  }
-
-  private ensureBodiesUpToDate(): void {
-    if (!this.topologyDirty) {
-      return;
-    }
-    this.recomputeBodies();
-    this.topologyDirty = false;
-  }
-
-  private recomputeBodies(): void {
-    this.bodies.length = 0;
-
-    const activePointIds = this.points.flatMap((point) => (point ? [point.id] : []));
-    const neighbors = new Map<PointId, PointId[]>();
-    const pointConstraintIds = new Map<PointId, ConstraintId[]>();
-
-    for (const pointId of activePointIds) {
-      neighbors.set(pointId, []);
-      pointConstraintIds.set(pointId, []);
-    }
-
-    for (const constraint of this.constraints) {
-      if (!constraint?.enabled) {
-        continue;
-      }
-
-      const pointA = this.points[constraint.pointAId];
-      const pointB = this.points[constraint.pointBId];
-
-      if (!pointA || !pointB) {
-        continue;
-      }
-
-      neighbors.get(pointA.id)?.push(pointB.id);
-      neighbors.get(pointB.id)?.push(pointA.id);
-      pointConstraintIds.get(pointA.id)?.push(constraint.id);
-      pointConstraintIds.get(pointB.id)?.push(constraint.id);
-    }
-
-    const visited = new Set<PointId>();
-
-    for (const pointId of activePointIds) {
-      if (visited.has(pointId)) {
-        continue;
-      }
-
-      const stack = [pointId];
-      const componentPointIds: PointId[] = [];
-      const componentConstraintIds = new Set<ConstraintId>();
-
-      visited.add(pointId);
-
-      while (stack.length > 0) {
-        const currentPointId = stack.pop();
-
-        if (currentPointId === undefined) {
-          continue;
-        }
-
-        componentPointIds.push(currentPointId);
-
-        for (const constraintId of pointConstraintIds.get(currentPointId) ?? []) {
-          componentConstraintIds.add(constraintId);
-        }
-
-        for (const neighbor of neighbors.get(currentPointId) ?? []) {
-          if (visited.has(neighbor)) {
-            continue;
-          }
-
-          visited.add(neighbor);
-          stack.push(neighbor);
-        }
-      }
-
-      const bodyId = this.nextBodyId;
-      this.nextBodyId += 1;
-      const constraintIds = [...componentConstraintIds];
-      const colliderConstraintIds = constraintIds.filter((constraintId) => {
-        const constraint = this.constraints[constraintId];
-        return Boolean(constraint && constraint.collisionRadius > 0);
-      });
-
-      for (const componentPointId of componentPointIds) {
-        const point = this.points[componentPointId];
-
-        if (point) {
-          point.bodyId = bodyId;
-        }
-      }
-
-      this.bodies.push({
-        id: bodyId,
-        pointIds: componentPointIds,
-        constraintIds,
-        colliderConstraintIds,
-      });
-    }
   }
 
   private integrate(deltaTime: number): void {
@@ -804,8 +673,6 @@ class SoftBodyWorld implements PhysicsWorld {
   }
 
   private breakTornConstraints(): void {
-    let brokeConstraint = false;
-
     for (const constraint of this.constraints) {
       if (!constraint?.enabled || constraint.tearThreshold === null) {
         continue;
@@ -822,13 +689,9 @@ class SoftBodyWorld implements PhysicsWorld {
 
       if (currentLength > constraint.restLength * constraint.tearThreshold || currentLength < constraint.restLength / constraint.tearThreshold) {
         this.constraints[constraint.id] = undefined;
-        brokeConstraint = true;
       }
     }
 
-    if (brokeConstraint) {
-      this.topologyDirty = true;
-    }
   }
 
   private getVelocityX(point: PointState, deltaTime: number): number {

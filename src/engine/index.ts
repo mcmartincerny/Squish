@@ -2,8 +2,6 @@ export { createWorld } from './core/world.ts'
 
 export type {
   ApplyRadialForceOptions,
-  BodyId,
-  BodySnapshot,
   ConstraintId,
   ConstraintSnapshot,
   CreateConstraintOptions,

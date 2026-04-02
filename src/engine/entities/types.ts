@@ -7,7 +7,6 @@ export type Vec2 = Vec2Like;
 
 export type PointId = number;
 export type ConstraintId = number;
-export type BodyId = number;
 export type LayerId = number;
 
 export interface WorldConfig {
@@ -67,7 +66,6 @@ export interface PointSnapshot {
   radius: number;
   mass: number;
   pinned: boolean;
-  bodyId: BodyId;
   layers: LayerId[];
 }
 
@@ -86,13 +84,6 @@ export interface ConstraintSnapshot {
   layer: LayerId;
 }
 
-export interface BodySnapshot {
-  id: BodyId;
-  pointIds: PointId[];
-  constraintIds: ConstraintId[];
-  colliderConstraintIds: ConstraintId[];
-}
-
 export interface GridCellSnapshot {
   cellX: number;
   cellY: number;
@@ -105,7 +96,6 @@ export interface WorldSnapshot {
   config: WorldConfig;
   points: PointSnapshot[];
   constraints: ConstraintSnapshot[];
-  bodies: BodySnapshot[];
   gridCells: GridCellSnapshot[];
 }
 

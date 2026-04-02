@@ -96,7 +96,7 @@ export const BENCHMARK_SCENARIOS: BenchmarkScenario[] = [
     setup(world, settings) {
       loadEmptyScene(world, settings);
 
-      populateBodyGrid({
+      populateShapeGrid({
         world,
         settings,
         columns: 7,
@@ -105,7 +105,7 @@ export const BENCHMARK_SCENARIOS: BenchmarkScenario[] = [
         startY: 120,
         spacingX: 270,
         spacingY: 250,
-        spawnBody({ column, row, centerX, centerY }) {
+        spawnShape({ column, row, centerX, centerY }) {
           if ((row + column) % 3 === 0) {
             spawnTriangle({ world, settings, centerX, centerY });
             return;
@@ -126,7 +126,7 @@ export const BENCHMARK_SCENARIOS: BenchmarkScenario[] = [
     setup(world, settings) {
       loadEmptyScene(world, settings);
 
-      populateBodyGrid({
+      populateShapeGrid({
         world,
         settings,
         columns: 6,
@@ -135,7 +135,7 @@ export const BENCHMARK_SCENARIOS: BenchmarkScenario[] = [
         startY: 120,
         spacingX: 360,
         spacingY: 235,
-        spawnBody({ centerX, centerY }) {
+        spawnShape({ centerX, centerY }) {
           spawnCircle({ world, settings, centerX, centerY });
         },
       });
@@ -151,7 +151,7 @@ export const BENCHMARK_SCENARIOS: BenchmarkScenario[] = [
     setup(world, settings) {
       loadEmptyScene(world, settings);
 
-      populateBodyGrid({
+      populateShapeGrid({
         world,
         settings,
         columns: 5,
@@ -160,7 +160,7 @@ export const BENCHMARK_SCENARIOS: BenchmarkScenario[] = [
         startY: 200,
         spacingX: 420,
         spacingY: 320,
-        spawnBody({ centerX, centerY }) {
+        spawnShape({ centerX, centerY }) {
           spawnSquareTriMesh(
             {
               world,
@@ -328,7 +328,7 @@ function createScenario(options: {
   };
 }
 
-function populateBodyGrid(options: {
+function populateShapeGrid(options: {
   world: PhysicsWorld;
   settings: PlaygroundSettings;
   columns: number;
@@ -337,11 +337,11 @@ function populateBodyGrid(options: {
   startY: number;
   spacingX: number;
   spacingY: number;
-  spawnBody: (options: { column: number; row: number; centerX: number; centerY: number }) => void;
+  spawnShape: (options: { column: number; row: number; centerX: number; centerY: number }) => void;
 }): void {
   for (let row = 0; row < options.rows; row += 1) {
     for (let column = 0; column < options.columns; column += 1) {
-      options.spawnBody({
+      options.spawnShape({
         column,
         row,
         centerX: options.startX + column * options.spacingX,

@@ -454,7 +454,6 @@ export function BenchmarkRunner({ onBackToPlayground, onOpenBenchmarkCharts }: B
                   <th>Test</th>
                   <th>Points</th>
                   <th>Constraints</th>
-                  <th>Bodies</th>
                   <th>Avg ms</th>
                   <th>p95 ms</th>
                   <th>p99 ms</th>
@@ -466,7 +465,7 @@ export function BenchmarkRunner({ onBackToPlayground, onOpenBenchmarkCharts }: B
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td className="runner-table__empty" colSpan={10}>
+                    <td className="runner-table__empty" colSpan={9}>
                       No benchmark results yet.
                     </td>
                   </tr>
@@ -476,7 +475,6 @@ export function BenchmarkRunner({ onBackToPlayground, onOpenBenchmarkCharts }: B
                       <td>{result.scenarioName}</td>
                       <td>{result.counts.points}</td>
                       <td>{result.counts.constraints}</td>
-                      <td>{result.counts.bodies}</td>
                       <td>{result.averageMs.toFixed(3)}</td>
                       <td>{result.p95Ms.toFixed(3)}</td>
                       <td>{result.p99Ms.toFixed(3)}</td>
@@ -507,7 +505,6 @@ function createScenarioDefinitionFromSnapshot(
     counts: {
       points: snapshot.points.length,
       constraints: snapshot.constraints.length,
-      bodies: snapshot.bodies.length,
     },
     signature: createBenchmarkScenarioSignature(scenario, snapshot),
   };

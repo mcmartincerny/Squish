@@ -46,7 +46,6 @@ type MouseMode = 'pull' | 'push' | 'drag' | 'deletePoint' | 'deleteConstraint' |
 interface WorldStats {
   points: number;
   constraints: number;
-  bodies: number;
 }
 
 interface PointerState {
@@ -78,7 +77,6 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
   const [stats, setStats] = useState<WorldStats>({
     points: 0,
     constraints: 0,
-    bodies: 0,
   });
   const [performanceStats, setPerformanceStats] = useState<PerformanceStats>({
     fps: 0,
@@ -189,7 +187,6 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
       setStats({
         points: snapshot.points.length,
         constraints: snapshot.constraints.length,
-        bodies: snapshot.bodies.length,
       });
       setPerformanceStats({
         fps: 0,
@@ -320,7 +317,6 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
       setStats({
         points: report.snapshot.points.length,
         constraints: report.snapshot.constraints.length,
-        bodies: report.snapshot.bodies.length,
       });
       statsFrameBudgetRef.current = 0;
     }
@@ -618,7 +614,6 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
         <div className="toolbar__stats">
           <StatChip label="Points" value={stats.points.toString()} />
           <StatChip label="Constraints" value={stats.constraints.toString()} />
-          <StatChip label="Bodies" value={stats.bodies.toString()} />
           <StatChip label="FPS" value={performanceStats.fps.toFixed(1).padStart(5, '\u00a0')} />
           <StatChip label="Step" value={`${performanceStats.stepMs.toFixed(2)} ms`} />
           <StatChip label="Snapshot" value={`${performanceStats.snapshotMs.toFixed(2)} ms`} />
