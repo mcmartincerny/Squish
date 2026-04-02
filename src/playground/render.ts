@@ -43,6 +43,13 @@ export function drawWorld(
     end: { x: number; y: number };
     color?: string;
   } | null,
+  previewPoint?: {
+    x: number;
+    y: number;
+    radius: number;
+    pinned: boolean;
+  } | null,
+  gridSpacing?: number | null,
 ): void {
   const { width, height } = context.canvas;
 
@@ -61,6 +68,25 @@ export function drawWorld(
   context.rect(0, 0, snapshot.config.size.x, snapshot.config.size.y);
   context.fill();
   context.stroke();
+
+  if (gridSpacing && gridSpacing > 0) {
+    context.strokeStyle = "rgba(180, 180, 180, 0.12)";
+    context.lineWidth = 1 / camera.zoom;
+
+    for (let x = gridSpacing; x < snapshot.config.size.x; x += gridSpacing) {
+      context.beginPath();
+      context.moveTo(x, 0);
+      context.lineTo(x, snapshot.config.size.y);
+      context.stroke();
+    }
+
+    for (let y = gridSpacing; y < snapshot.config.size.y; y += gridSpacing) {
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(snapshot.config.size.x, y);
+      context.stroke();
+    }
+  }
 
   context.lineCap = "round";
   context.lineJoin = "round";
@@ -132,6 +158,16 @@ export function drawWorld(
     context.lineTo(previewLine.end.x, previewLine.end.y);
     context.stroke();
     context.setLineDash([]);
+  }
+
+  if (previewPoint) {
+    context.fillStyle = "rgba(0,0,0,0)";
+    context.strokeStyle = previewPoint.pinned ? "rgba(255, 215, 106, 1)" : "rgba(255, 255, 255, 1)";
+    context.lineWidth = 1 / camera.zoom;
+    context.beginPath();
+    context.arc(previewPoint.x, previewPoint.y, previewPoint.radius, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
   }
 
   if (pointerWorld && mouseRadius !== null) {

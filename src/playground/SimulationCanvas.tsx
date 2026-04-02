@@ -33,6 +33,8 @@ interface SimulationCanvasProps {
     pointerWorld: { x: number; y: number } | null;
     overlayRadius: number | null;
     previewLine: PreviewLine | null;
+    previewPoint: { x: number; y: number; radius: number; pinned: boolean } | null;
+    gridSpacing: number | null;
   };
 }
 
@@ -176,6 +178,8 @@ export function SimulationCanvas({
         pointerWorld: null,
         overlayRadius: null,
         previewLine: null,
+        previewPoint: null,
+        gridSpacing: null,
       };
       drawWorld(
         context,
@@ -184,6 +188,8 @@ export function SimulationCanvas({
         overlayState.pointerWorld,
         overlayState.overlayRadius,
         overlayState.previewLine,
+        overlayState.previewPoint,
+        overlayState.gridSpacing,
       );
       const drawMs = performance.now() - drawStart;
 

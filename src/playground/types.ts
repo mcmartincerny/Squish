@@ -17,9 +17,11 @@ export interface PlaygroundSettings {
   dragStiffness: number;
   createPointMass: number;
   createPointPinned: boolean;
+  snapToGrid: boolean;
   createPointLayerNegativeOne: boolean;
   createPointLayerZero: boolean;
   createPointLayerOne: boolean;
+  snapGridSpacing: number;
   createConstraintLayer: "auto" | -1 | 0 | 1;
 }
 
@@ -48,8 +50,10 @@ export const DEFAULT_SETTINGS: PlaygroundSettings = {
   dragStiffness: 0.18,
   createPointMass: 1,
   createPointPinned: false,
+  snapToGrid: false,
   createPointLayerNegativeOne: false,
   createPointLayerZero: true,
   createPointLayerOne: false,
+  snapGridSpacing: 20,
   createConstraintLayer: "auto",
 };

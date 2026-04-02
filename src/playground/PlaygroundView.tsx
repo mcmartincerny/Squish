@@ -281,7 +281,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
   }, [recreateWorld]);
 
   const handleBeforeStep = useCallback((world: PhysicsWorld) => {
-    const pointerWorld = pointerRef.current.world;
+    const pointerWorld = getInteractionPointerWorld(pointerRef.current.world, mouseModeRef.current, settingsRef.current);
 
     if (!pointerWorld || !pointerRef.current.primaryDown) {
       return;
@@ -334,7 +334,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
   const handlePrimaryPointerDown = useCallback(() => {
     const world = worldRef.current;
     const snapshot = snapshotRef.current;
-    const pointerWorld = pointerRef.current.world;
+    const pointerWorld = getInteractionPointerWorld(pointerRef.current.world, mouseModeRef.current, settingsRef.current);
 
     if (!world || !snapshot || !pointerWorld) {
       return;
@@ -431,8 +431,8 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
   const handlePrimaryPointerUp = useCallback(() => {
     const world = worldRef.current;
     const snapshot = snapshotRef.current;
-    const pointerWorld = pointerRef.current.world;
     const mode = mouseModeRef.current;
+    const pointerWorld = getInteractionPointerWorld(pointerRef.current.world, mode, settingsRef.current);
 
     pointerRef.current.primaryDown = false;
 
@@ -499,7 +499,8 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
 
   const getOverlayState = useCallback(() => {
     const snapshot = snapshotRef.current;
-    const pointerWorld = pointerRef.current.world;
+    const pointerWorld = getInteractionPointerWorld(pointerRef.current.world, mouseModeRef.current, settingsRef.current);
+    const snappingActive = shouldUseCreationSnap(mouseModeRef.current, settingsRef.current);
     const previewPointId = interactionRef.current.pendingConstraintStartPointId ?? interactionRef.current.dragSourcePointId;
     const hoveredPointId =
       snapshot && pointerWorld && mouseModeRef.current === 'createConstraint'
@@ -530,6 +531,16 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
               previewColor,
             )
           : null,
+      previewPoint:
+        mouseModeRef.current === 'createPoint' && pointerWorld
+          ? {
+              x: pointerWorld.x,
+              y: pointerWorld.y,
+              radius: settingsRef.current.pointRadius,
+              pinned: settingsRef.current.createPointPinned,
+            }
+          : null,
+      gridSpacing: snappingActive ? settingsRef.current.snapGridSpacing : null,
     };
   }, [camera.zoom]);
 
@@ -675,6 +686,25 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
 
             {mouseMode === 'createPoint' && (
               <>
+                <label className="control control--boolean">
+                  <span className="control__label">Snap to grid</span>
+                  <input
+                    className="control__checkbox"
+                    type="checkbox"
+                    checked={settings.snapToGrid}
+                    onChange={(event) => updateSetting('snapToGrid', event.target.checked)}
+                  />
+                </label>
+                {settings.snapToGrid && (
+                  <NumberControl
+                    label="Grid spacing"
+                    min={20}
+                    max={400}
+                    step={10}
+                    value={settings.snapGridSpacing}
+                    onChange={(value) => updateSetting('snapGridSpacing', value)}
+                  />
+                )}
                 <NumberControl label="Point radius" min={2} max={20} step={1} value={settings.pointRadius} onChange={(value) => updateSetting('pointRadius', value)} />
                 <NumberControl label="Point mass" min={0.1} max={10} step={0.1} value={settings.createPointMass} onChange={(value) => updateSetting('createPointMass', value)} />
                 <label className="control control--boolean">
@@ -717,6 +747,25 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
 
             {mouseMode === 'createConstraint' && (
               <>
+                <label className="control control--boolean">
+                  <span className="control__label">Snap to grid</span>
+                  <input
+                    className="control__checkbox"
+                    type="checkbox"
+                    checked={settings.snapToGrid}
+                    onChange={(event) => updateSetting('snapToGrid', event.target.checked)}
+                  />
+                </label>
+                {settings.snapToGrid && (
+                  <NumberControl
+                    label="Grid spacing"
+                    min={20}
+                    max={400}
+                    step={1}
+                    value={settings.snapGridSpacing}
+                    onChange={(value) => updateSetting('snapGridSpacing', value)}
+                  />
+                )}
                 <NumberControl label="Constraint stiffness" min={0.001} max={1} step={0.001} value={settings.constraintStiffness} onChange={(value) => updateSetting('constraintStiffness', value)} />
                 <NumberControl label="Constraint damping" min={0} max={50} step={0.5} value={settings.constraintDamping} onChange={(value) => updateSetting('constraintDamping', value)} />
                 <NumberControl label="Capsule radius" min={0} max={24} step={1} value={settings.colliderRadius} onChange={(value) => updateSetting('colliderRadius', value)} />
@@ -784,6 +833,34 @@ function loadSettings(): PlaygroundSettings {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function getInteractionPointerWorld(
+  pointerWorld: { x: number; y: number } | null,
+  mouseMode: MouseMode,
+  settings: PlaygroundSettings,
+): { x: number; y: number } | null {
+  if (!pointerWorld) {
+    return null;
+  }
+
+  if (!shouldUseCreationSnap(mouseMode, settings)) {
+    return pointerWorld;
+  }
+
+  const spacing = Math.max(1, settings.snapGridSpacing);
+  return {
+    x: clamp(snapToGrid(pointerWorld.x, spacing), 0, settings.worldWidth),
+    y: clamp(snapToGrid(pointerWorld.y, spacing), 0, settings.worldHeight),
+  };
+}
+
+function shouldUseCreationSnap(mouseMode: MouseMode, settings: PlaygroundSettings): boolean {
+  return settings.snapToGrid && (mouseMode === 'createPoint' || mouseMode === 'createConstraint');
+}
+
+function snapToGrid(value: number, spacing: number): number {
+  return Math.round(value / spacing) * spacing;
 }
 
 function StatChip({ label, value }: { label: string; value: string }) {
