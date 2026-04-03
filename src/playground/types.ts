@@ -8,6 +8,7 @@ export interface PlaygroundSettings {
   restitution: number;
   pointRadius: number;
   colliderRadius: number;
+  useXPBDSolver: boolean;
   constraintStiffness: number;
   constraintDamping: number;
   tearThreshold: number;
@@ -41,6 +42,7 @@ export const DEFAULT_SETTINGS: PlaygroundSettings = {
   restitution: 0.2,
   pointRadius: 8,
   colliderRadius: 10,
+  useXPBDSolver: false,
   constraintStiffness: 0.04,
   constraintDamping: 10,
   tearThreshold: 2.4,

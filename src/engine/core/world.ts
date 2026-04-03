@@ -45,6 +45,7 @@ interface ConstraintState {
   collisionRadius: number;
   enabled: boolean;
   layer: LayerId;
+  xpbdLambda: number;
 }
 
 const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -60,6 +61,7 @@ const DEFAULT_WORLD_CONFIG: WorldConfig = {
 };
 
 const EPSILON = 1e-6;
+const REFERENCE_DELTA_TIME = 1 / 60;
 
 function toWorldConfig(options: CreateWorldOptions): WorldConfig {
   return {
@@ -130,6 +132,7 @@ class SoftBodyWorld implements PhysicsWorld {
       collisionRadius: Math.max(0, options.collisionRadius ?? 0),
       enabled: options.enabled ?? true,
       layer,
+      xpbdLambda: 0,
     };
 
     this.constraints[id] = constraint;
@@ -276,17 +279,24 @@ class SoftBodyWorld implements PhysicsWorld {
     };
   }
 
-  step(deltaTime: number): void {
+  step(deltaTime: number, useXPBDSolver = false): void {
     if (deltaTime <= 0) {
       return;
     }
 
     this.integrate(deltaTime);
     this.rebuildBroadphase();
+    if (useXPBDSolver) {
+      this.resetConstraintLambdas();
+    }
 
     for (let iteration = 0; iteration < this.config.iterations; iteration += 1) {
       this.solveWorldBounds(deltaTime);
-      this.solveConstraints(deltaTime);
+      if (useXPBDSolver) {
+        this.solveConstraintsXPBD(deltaTime);
+      } else {
+        this.solveConstraints(deltaTime);
+      }
       this.solvePointVsCapsuleContacts(deltaTime);
     }
 
@@ -466,7 +476,8 @@ class SoftBodyWorld implements PhysicsWorld {
       }
 
       const difference = currentLength - constraint.restLength;
-      const correctionScale = (difference / currentLength) * constraint.stiffness;
+      const perIterationStiffness = this.mapLegacyStiffnessToPerIterationStiffness(constraint.stiffness, deltaTime);
+      const correctionScale = (difference / currentLength) * perIterationStiffness;
       const correctionX = deltaX * correctionScale;
       const correctionY = deltaY * correctionScale;
       const weightA = pointA.invMass / invMassSum;
@@ -482,27 +493,57 @@ class SoftBodyWorld implements PhysicsWorld {
         pointB.y -= correctionY * weightB;
       }
 
-      if (constraint.damping <= EPSILON) {
+      this.applyConstraintDamping(constraint, pointA, pointB, deltaTime);
+    }
+  }
+
+  private solveConstraintsXPBD(deltaTime: number): void {
+    for (const constraint of this.constraints) {
+      if (!constraint?.enabled) {
         continue;
       }
 
+      const pointA = this.points[constraint.pointAId];
+      const pointB = this.points[constraint.pointBId];
+
+      if (!pointA || !pointB) {
+        continue;
+      }
+
+      const deltaX = pointB.x - pointA.x;
+      const deltaY = pointB.y - pointA.y;
+      const currentLength = Math.hypot(deltaX, deltaY);
+
+      if (currentLength <= EPSILON) {
+        continue;
+      }
+
+      const invMassSum = pointA.invMass + pointB.invMass;
+
+      if (invMassSum <= EPSILON) {
+        continue;
+      }
+
+      const compliance = this.mapLegacyStiffnessToXPBDCompliance(constraint.stiffness);
+      const alpha = compliance / (deltaTime * deltaTime);
+      const constraintError = currentLength - constraint.restLength;
+      const deltaLambda = -(constraintError + alpha * constraint.xpbdLambda) / (invMassSum + alpha);
       const directionX = deltaX / currentLength;
       const directionY = deltaY / currentLength;
-      const velocityAX = this.getVelocityX(pointA, deltaTime);
-      const velocityAY = this.getVelocityY(pointA, deltaTime);
-      const velocityBX = this.getVelocityX(pointB, deltaTime);
-      const velocityBY = this.getVelocityY(pointB, deltaTime);
-      const relativeSpeed = (velocityBX - velocityAX) * directionX + (velocityBY - velocityAY) * directionY;
-      const dampedRelativeSpeed = relativeSpeed * Math.exp(-constraint.damping * deltaTime);
-      const deltaRelativeSpeed = dampedRelativeSpeed - relativeSpeed;
+
+      constraint.xpbdLambda += deltaLambda;
 
       if (!pointA.pinned) {
-        this.setVelocity(pointA, velocityAX - directionX * deltaRelativeSpeed * weightA, velocityAY - directionY * deltaRelativeSpeed * weightA, deltaTime);
+        pointA.x -= directionX * deltaLambda * pointA.invMass;
+        pointA.y -= directionY * deltaLambda * pointA.invMass;
       }
 
       if (!pointB.pinned) {
-        this.setVelocity(pointB, velocityBX + directionX * deltaRelativeSpeed * weightB, velocityBY + directionY * deltaRelativeSpeed * weightB, deltaTime);
+        pointB.x += directionX * deltaLambda * pointB.invMass;
+        pointB.y += directionY * deltaLambda * pointB.invMass;
       }
+
+      this.applyConstraintDamping(constraint, pointA, pointB, deltaTime);
     }
   }
 
@@ -532,9 +573,8 @@ class SoftBodyWorld implements PhysicsWorld {
           continue;
         }
 
-        // this might not be necessary and can be removed later coz broadphase already filters by layers
         if (!point.layers.includes(constraint.layer)) {
-          throw new Error(`Point ${point.id} is not in layer ${constraint.layer}`);
+          continue;
         }
 
         const closestPoint = closestPointOnSegment(point, pointA, pointB);
@@ -611,6 +651,98 @@ class SoftBodyWorld implements PhysicsWorld {
           normalY,
         );
       }
+    }
+  }
+
+  private resetConstraintLambdas(): void {
+    for (const constraint of this.constraints) {
+      if (constraint) {
+        constraint.xpbdLambda = 0;
+      }
+    }
+  }
+
+  private mapLegacyStiffnessToPerIterationStiffness(stiffness: number, deltaTime: number): number {
+    const baselineFrameStiffness = this.getBaselineFrameStiffness(stiffness);
+
+    if (baselineFrameStiffness <= EPSILON) {
+      return 0;
+    }
+
+    if (baselineFrameStiffness >= 1 - EPSILON) {
+      return 1;
+    }
+
+    const iterationCount = Math.max(1, this.config.iterations);
+    const normalizedExponent = REFERENCE_DELTA_TIME / (deltaTime * iterationCount);
+    return 1 - Math.pow(1 - baselineFrameStiffness, normalizedExponent);
+  }
+
+  private mapLegacyStiffnessToXPBDCompliance(stiffness: number): number {
+    const baselineFrameStiffness = this.getBaselineFrameStiffness(stiffness);
+
+    if (baselineFrameStiffness >= 1 - EPSILON) {
+      return 0;
+    }
+
+    if (baselineFrameStiffness <= EPSILON) {
+      return 1e12;
+    }
+
+    return ((1 - baselineFrameStiffness) / baselineFrameStiffness) * REFERENCE_DELTA_TIME * REFERENCE_DELTA_TIME;
+  }
+
+  private getBaselineFrameStiffness(stiffness: number): number {
+    const clampedStiffness = clamp01(stiffness);
+
+    if (clampedStiffness <= EPSILON) {
+      return 0;
+    }
+
+    if (clampedStiffness >= 1 - EPSILON) {
+      return 1;
+    }
+
+    return 1 - Math.pow(1 - clampedStiffness, DEFAULT_WORLD_CONFIG.iterations);
+  }
+
+  private applyConstraintDamping(constraint: ConstraintState, pointA: PointState, pointB: PointState, deltaTime: number): void {
+    if (constraint.damping <= EPSILON) {
+      return;
+    }
+
+    const deltaX = pointB.x - pointA.x;
+    const deltaY = pointB.y - pointA.y;
+    const currentLength = Math.hypot(deltaX, deltaY);
+
+    if (currentLength <= EPSILON) {
+      return;
+    }
+
+    const invMassSum = pointA.invMass + pointB.invMass;
+
+    if (invMassSum <= EPSILON) {
+      return;
+    }
+
+    const weightA = pointA.invMass / invMassSum;
+    const weightB = pointB.invMass / invMassSum;
+    const directionX = deltaX / currentLength;
+    const directionY = deltaY / currentLength;
+    const velocityAX = this.getVelocityX(pointA, deltaTime);
+    const velocityAY = this.getVelocityY(pointA, deltaTime);
+    const velocityBX = this.getVelocityX(pointB, deltaTime);
+    const velocityBY = this.getVelocityY(pointB, deltaTime);
+    const relativeSpeed = (velocityBX - velocityAX) * directionX + (velocityBY - velocityAY) * directionY;
+    const dampedRelativeSpeed = relativeSpeed * Math.exp(-constraint.damping * deltaTime);
+    const deltaRelativeSpeed = dampedRelativeSpeed - relativeSpeed;
+
+    if (!pointA.pinned) {
+      this.setVelocity(pointA, velocityAX - directionX * deltaRelativeSpeed * weightA, velocityAY - directionY * deltaRelativeSpeed * weightA, deltaTime);
+    }
+
+    if (!pointB.pinned) {
+      this.setVelocity(pointB, velocityBX + directionX * deltaRelativeSpeed * weightB, velocityBY + directionY * deltaRelativeSpeed * weightB, deltaTime);
     }
   }
 

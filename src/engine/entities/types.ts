@@ -111,6 +111,6 @@ export interface PhysicsWorld {
   setConfig(config: Partial<WorldConfig>): void;
   getConfig(): WorldConfig;
   getSnapshot(): WorldSnapshot;
-  step(deltaTime: number): void;
+  step(deltaTime: number, useXPBDSolver?: boolean): void;
   clear(): void;
 }

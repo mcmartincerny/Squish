@@ -637,6 +637,10 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
         <NumberControl label="World height" min={200} max={8000} step={20} value={settings.worldHeight} onChange={(value) => updateSetting('worldHeight', value)} />
         <NumberControl label="Point radius" min={2} max={20} step={1} value={settings.pointRadius} onChange={(value) => updateSetting('pointRadius', value)} />
         <NumberControl label="Capsule radius" min={2} max={24} step={1} value={settings.colliderRadius} onChange={(value) => updateSetting('colliderRadius', value)} />
+        <label className="control control--boolean">
+          <span className="control__label">Use XPBD solver</span>
+          <input className="control__checkbox" type="checkbox" checked={settings.useXPBDSolver} onChange={(event) => updateSetting('useXPBDSolver', event.target.checked)} />
+        </label>
       </section>
 
       <section className="workspace">
@@ -792,6 +796,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
             worldRef={worldRef}
             camera={camera}
             paused={paused}
+            useXPBDSolver={settings.useXPBDSolver}
             onCameraChange={setCamera}
             onPointerWorldChange={(position) => {
               pointerRef.current.world = position;

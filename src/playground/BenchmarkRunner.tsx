@@ -44,6 +44,7 @@ export function BenchmarkRunner({ onBackToPlayground, onOpenBenchmarkCharts }: B
   const [selectedScenarioIds, setSelectedScenarioIds] = useState<string[]>(BENCHMARK_SCENARIOS.map((scenario) => scenario.id));
   const [results, setResults] = useState<BenchmarkResult[]>([]);
   const [running, setRunning] = useState(false);
+  const [useXPBDSolver, setUseXPBDSolver] = useState(false);
   const [statusText, setStatusText] = useState('Select benchmark scenarios and click Run.');
   const [visibleScenarioId, setVisibleScenarioId] = useState<string | null>(BENCHMARK_SCENARIOS[0]?.id ?? null);
   const [downloadLabel, setDownloadLabel] = useState('');
@@ -362,6 +363,16 @@ export function BenchmarkRunner({ onBackToPlayground, onOpenBenchmarkCharts }: B
             value={downloadLabel}
             onChange={(event) => setDownloadLabel(event.target.value)}
           />
+          <label className="control control--boolean">
+            <span className="control__label">Use XPBD solver</span>
+            <input
+              className="control__checkbox"
+              type="checkbox"
+              checked={useXPBDSolver}
+              disabled={running}
+              onChange={(event) => setUseXPBDSolver(event.target.checked)}
+            />
+          </label>
         </div>
         <div className="runner-toolbar__status">
           <strong>{visibleScenario?.name ?? 'No scenario'}</strong>
@@ -433,6 +444,7 @@ export function BenchmarkRunner({ onBackToPlayground, onOpenBenchmarkCharts }: B
               worldRef={worldRef}
               camera={camera}
               paused={false}
+              useXPBDSolver={useXPBDSolver}
               enablePanZoom={false}
               enablePrimaryInteraction={false}
               onCameraChange={setCamera}

@@ -18,6 +18,7 @@ interface SimulationCanvasProps {
   worldRef: MutableRefObject<PhysicsWorld | null>;
   camera: CameraState;
   paused: boolean;
+  useXPBDSolver?: boolean;
   className?: string;
   enablePanZoom?: boolean;
   enablePrimaryInteraction?: boolean;
@@ -42,6 +43,7 @@ export function SimulationCanvas({
   worldRef,
   camera,
   paused,
+  useXPBDSolver,
   className = 'playground-canvas',
   enablePanZoom = true,
   enablePrimaryInteraction = true,
@@ -58,6 +60,7 @@ export function SimulationCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraRef = useRef(camera);
   const pausedRef = useRef(paused);
+  const useXPBDSolverRef = useRef<boolean | undefined>(useXPBDSolver);
   const onCameraChangeRef = useRef(onCameraChange);
   const onPointerWorldChangeRef = useRef(onPointerWorldChange);
   const onBeforeStepRef = useRef(onBeforeStep);
@@ -82,6 +85,10 @@ export function SimulationCanvas({
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
+
+  useEffect(() => {
+    useXPBDSolverRef.current = useXPBDSolver;
+  }, [useXPBDSolver]);
 
   useEffect(() => {
     onCameraChangeRef.current = onCameraChange;
@@ -164,7 +171,7 @@ export function SimulationCanvas({
           onBeforeStepRef.current?.(currentWorld, FIXED_DELTA_TIME);
 
           const stepStart = performance.now();
-          currentWorld.step(FIXED_DELTA_TIME);
+          currentWorld.step(FIXED_DELTA_TIME, useXPBDSolverRef.current);
           stepDurationsMs.push(performance.now() - stepStart);
           accumulatorRef.current -= FIXED_DELTA_TIME;
         }
