@@ -359,6 +359,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
           pinned: true,
           radius: 0,
           layers: targetPoint.layers,
+          collisionsEnabled: false,
         });
         const constraintId = world.createConstraint({
           pointAId: targetPoint.id,

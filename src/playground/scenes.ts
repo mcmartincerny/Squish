@@ -364,6 +364,7 @@ export function loadLayerShowcaseScene(world: PhysicsWorld, settings: Playground
 interface PointCreationOptions {
   pinned?: boolean;
   layers?: LayerId[];
+  collisionsEnabled?: boolean;
 }
 
 interface ConstraintOverrides {
@@ -377,6 +378,7 @@ interface ConstraintOverrides {
 function createPoint(world: PhysicsWorld, settings: PlaygroundSettings, x: number, y: number, options: boolean | PointCreationOptions = false): PointId {
   const pinned = typeof options === "boolean" ? options : options.pinned ?? false;
   const layers = typeof options === "boolean" ? undefined : options.layers;
+  const collisionsEnabled = typeof options === "boolean" ? undefined : options.collisionsEnabled;
 
   return world.createPoint({
     position: { x, y },
@@ -384,6 +386,7 @@ function createPoint(world: PhysicsWorld, settings: PlaygroundSettings, x: numbe
     radius: settings.pointRadius,
     pinned,
     layers,
+    collisionsEnabled,
   });
 }
 

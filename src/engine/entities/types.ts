@@ -33,6 +33,7 @@ export interface CreatePointOptions {
   radius?: number;
   pinned?: boolean;
   layers?: LayerId[];
+  collisionsEnabled?: boolean;
 }
 
 export interface SetPointPositionOptions {
@@ -67,6 +68,7 @@ export interface PointSnapshot {
   mass: number;
   pinned: boolean;
   layers: LayerId[];
+  collisionsEnabled: boolean;
 }
 
 export interface ConstraintSnapshot {

@@ -31,6 +31,7 @@ interface PointState {
   radius: number;
   pinned: boolean;
   layers: LayerId[];
+  collisionsEnabled: boolean;
 }
 
 interface ConstraintState {
@@ -103,6 +104,7 @@ class SoftBodyWorld implements PhysicsWorld {
       radius: Math.max(0, options.radius ?? this.config.defaultPointRadius),
       pinned: Boolean(options.pinned),
       layers,
+      collisionsEnabled: options.collisionsEnabled ?? true,
     };
 
     this.points[id] = point;
@@ -232,6 +234,7 @@ class SoftBodyWorld implements PhysicsWorld {
         mass: point.invMass === 0 ? Number.POSITIVE_INFINITY : 1 / point.invMass,
         pinned: point.pinned,
         layers: [...point.layers],
+        collisionsEnabled: point.collisionsEnabled,
       });
     }
 
@@ -505,7 +508,7 @@ class SoftBodyWorld implements PhysicsWorld {
 
   private solvePointVsCapsuleContacts(deltaTime: number): void {
     for (const point of this.points) {
-      if (!point) {
+      if (!point || !point.collisionsEnabled) {
         continue;
       }
 
