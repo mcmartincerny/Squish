@@ -16,6 +16,7 @@ export interface PlaygroundSettings {
   mouseRadius: number;
   mouseStrength: number;
   dragStiffness: number;
+  playerSize: number;
   createPointMass: number;
   createPointPinned: boolean;
   snapToGrid: boolean;
@@ -50,6 +51,7 @@ export const DEFAULT_SETTINGS: PlaygroundSettings = {
   mouseRadius: 150,
   mouseStrength: 4000,
   dragStiffness: 0.18,
+  playerSize: 1,
   createPointMass: 1,
   createPointPinned: false,
   snapToGrid: false,

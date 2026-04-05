@@ -212,6 +212,12 @@ input {
   font-size: 0.84rem;
 }
 
+.player-tool-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
 .workspace {
   min-height: 0;
   display: grid;

@@ -294,6 +294,22 @@ export function loadBridgeValidationScene(world: PhysicsWorld, settings: Playgro
   );
 }
 
+export function loadCharacterDemoScene(world: PhysicsWorld, settings: PlaygroundSettings): void {
+  world.clear();
+  syncWorldConfig(world, settings);
+
+  createPinnedColliderSegment(world, settings, settings.worldWidth * 0.18, settings.worldHeight * 0.72, settings.worldWidth * 0.46, settings.worldHeight * 0.72);
+  createPinnedColliderSegment(world, settings, settings.worldWidth * 0.58, settings.worldHeight * 0.62, settings.worldWidth * 0.8, settings.worldHeight * 0.62);
+  createPinnedColliderSegment(world, settings, settings.worldWidth * 0.62, settings.worldHeight * 0.48, settings.worldWidth * 0.76, settings.worldHeight * 0.4);
+
+  spawnSquare({
+    world,
+    settings,
+    centerX: settings.worldWidth * 0.68,
+    centerY: settings.worldHeight * 0.18,
+  });
+}
+
 export function loadLayerShowcaseScene(world: PhysicsWorld, settings: PlaygroundSettings): void {
   world.clear();
   syncWorldConfig(world, settings);
@@ -412,4 +428,33 @@ function connectLoop(world: PhysicsWorld, pointIds: PointId[], settings: Playgro
   for (let index = 0; index < pointIds.length; index += 1) {
     connect(world, pointIds[index], pointIds[(index + 1) % pointIds.length], settings);
   }
+}
+
+function createPinnedColliderSegment(
+  world: PhysicsWorld,
+  settings: PlaygroundSettings,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+): void {
+  const startPointId = world.createPoint({
+    position: { x: startX, y: startY },
+    pinned: true,
+    radius: settings.pointRadius,
+  });
+  const endPointId = world.createPoint({
+    position: { x: endX, y: endY },
+    pinned: true,
+    radius: settings.pointRadius,
+  });
+
+  world.createConstraint({
+    pointAId: startPointId,
+    pointBId: endPointId,
+    stiffness: 1,
+    damping: Math.max(settings.constraintDamping, 6),
+    tearThreshold: null,
+    collisionRadius: settings.colliderRadius * 1.35,
+  });
 }

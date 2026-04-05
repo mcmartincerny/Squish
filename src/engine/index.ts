@@ -1,6 +1,7 @@
 export { createWorld } from './core/world.ts'
 
 export type {
+  ApplyPointForceOptions,
   ApplyRadialForceOptions,
   ConstraintId,
   ConstraintSnapshot,
@@ -12,9 +13,14 @@ export type {
   PhysicsWorld,
   PointId,
   PointSnapshot,
+  RaycastHit,
+  RaycastOptions,
+  SetConstraintRestLengthOptions,
+  SetPointIgnoredConstraintsOptions,
   SetPointPositionOptions,
   Vec2,
   Vec2Like,
+  WorldController,
   WorldConfig,
   WorldSnapshot,
 } from './entities/types.ts'

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createWorld, type ConstraintId, type PhysicsWorld, type PointId, type WorldSnapshot } from '../engine/index.ts';
+import { spawnCharacter, type CharacterControlInput, type CharacterController } from '../engine/behaviors/index.ts';
 import { NumberControl } from './NumberControl.tsx';
 import { Tooltip } from './Tooltip.tsx';
 import { SimulationCanvas, type SimulationFrameReport } from './SimulationCanvas.tsx';
@@ -22,6 +23,7 @@ import {
 import {
   loadBridgeValidationScene,
   loadCapsuleEndpointValidationScene,
+  loadCharacterDemoScene,
   loadDefaultScene,
   loadEmptyScene,
   loadLayerShowcaseScene,
@@ -41,7 +43,7 @@ const SETTINGS_STORAGE_KEY = 'squish-playground-settings';
 const POINT_HIT_RADIUS_PIXELS = 14;
 const CONSTRAINT_HIT_RADIUS_PIXELS = 10;
 
-type MouseMode = 'pull' | 'push' | 'drag' | 'deletePoint' | 'deleteConstraint' | 'createPoint' | 'createConstraint';
+type MouseMode = 'pull' | 'push' | 'drag' | 'deletePoint' | 'deleteConstraint' | 'createPoint' | 'createConstraint' | 'playerControl';
 
 interface WorldStats {
   points: number;
@@ -59,6 +61,8 @@ interface InteractionState {
   dragConstraintId: ConstraintId | null;
   pendingConstraintStartPointId: PointId | null;
 }
+
+type PlayerInputState = CharacterControlInput;
 
 interface PlaygroundViewProps {
   onOpenBenchmarkRunner: () => void;
@@ -88,6 +92,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
 
   const worldRef = useRef<PhysicsWorld | null>(null);
   const snapshotRef = useRef<WorldSnapshot | null>(null);
+  const characterControllerRef = useRef<CharacterController | null>(null);
   const settingsRef = useRef(settings);
   const mouseModeRef = useRef(mouseMode);
   const pointerRef = useRef<PointerState>({
@@ -95,6 +100,14 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
     primaryDown: false,
   });
   const interactionRef = useRef<InteractionState>(createIdleInteractionState());
+  const playerInputRef = useRef<PlayerInputState>({
+    left: false,
+    right: false,
+    up: false,
+    down: false,
+    jump: false,
+    aimTarget: null,
+  });
   const metricsWindowRef = useRef<RollingMetricsWindow>(createRollingMetricsWindow());
   const statsFrameBudgetRef = useRef(0);
   const hasInitializedRef = useRef(false);
@@ -159,6 +172,8 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
       worldSettings = settingsRef.current,
     ) => {
       cleanupTemporaryInteraction();
+      characterControllerRef.current?.remove();
+      characterControllerRef.current = null;
 
       const world = createWorld({
         gravity: { x: 0, y: worldSettings.gravity },
@@ -221,6 +236,66 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
     pointerRef.current.primaryDown = false;
   }, [mouseMode, cleanupTemporaryInteraction]);
 
+  useEffect(() => {
+    if (mouseMode === 'playerControl') {
+      return;
+    }
+
+    playerInputRef.current.left = false;
+    playerInputRef.current.right = false;
+    playerInputRef.current.up = false;
+    playerInputRef.current.down = false;
+    playerInputRef.current.jump = false;
+  }, [mouseMode]);
+
+  useEffect(() => {
+    const handleKeyChange = (pressed: boolean) => (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target) || mouseModeRef.current !== 'playerControl') {
+        return;
+      }
+
+      if (event.code === 'KeyA') {
+        playerInputRef.current.left = pressed;
+        event.preventDefault();
+      } else if (event.code === 'KeyD') {
+        playerInputRef.current.right = pressed;
+        event.preventDefault();
+      } else if (event.code === 'KeyW') {
+        playerInputRef.current.up = pressed;
+        event.preventDefault();
+      } else if (event.code === 'KeyS') {
+        playerInputRef.current.down = pressed;
+        event.preventDefault();
+      } else if (event.code === 'Space') {
+        playerInputRef.current.jump = pressed;
+        event.preventDefault();
+      } else {
+        console.log("Unrecognized key pressed: event.code", event.code);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      playerInputRef.current.left = false;
+      playerInputRef.current.right = false;
+      playerInputRef.current.up = false;
+      playerInputRef.current.down = false;
+      playerInputRef.current.jump = false;
+    };
+
+    const handleKeyDown = handleKeyChange(true);
+    const handleKeyUp = handleKeyChange(false);
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, []);
+
   const updateSetting = useCallback(<Key extends keyof PlaygroundSettings>(key: Key, value: PlaygroundSettings[Key]) => {
     setSettings((current) => ({
       ...current,
@@ -253,6 +328,68 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
     [settings],
   );
 
+  const removePlayer = useCallback(() => {
+    const world = worldRef.current;
+    const controller = characterControllerRef.current;
+
+    if (!world || !controller) {
+      return;
+    }
+
+    controller.remove();
+    characterControllerRef.current = null;
+    snapshotRef.current = world.getSnapshot();
+  }, []);
+
+  const spawnPlayerAtPointerOrCenter = useCallback(() => {
+    const world = worldRef.current;
+
+    if (!world) {
+      return;
+    }
+
+    const target = pointerRef.current.world ?? {
+      x: settingsRef.current.worldWidth * 0.35,
+      y: settingsRef.current.worldHeight * 0.64,
+    };
+
+    removePlayer();
+    const playerScale = settingsRef.current.playerSize;
+    const controller = spawnCharacter(world, {
+      position: {
+        x: clamp(target.x, 80, settingsRef.current.worldWidth - 80),
+        y: clamp(target.y, 80, settingsRef.current.worldHeight - Math.max(120, 140 * playerScale)),
+      },
+      scale: playerScale,
+      stiffness: Math.max(settingsRef.current.constraintStiffness * 5, 0.18),
+      damping: Math.max(settingsRef.current.constraintDamping, 8),
+      tearThreshold: null,
+    });
+    controller.setInput(playerInputRef.current);
+    characterControllerRef.current = controller;
+    snapshotRef.current = world.getSnapshot();
+  }, [removePlayer]);
+
+  const loadCharacterDemo = useCallback(() => {
+    recreateWorld((world, worldSettings) => {
+      loadCharacterDemoScene(world, worldSettings);
+      const playerScale = worldSettings.playerSize;
+      const controller = spawnCharacter(world, {
+        position: {
+          x: worldSettings.worldWidth * 0.24,
+          y: worldSettings.worldHeight * 0.58,
+        },
+        scale: playerScale,
+        stiffness: Math.max(worldSettings.constraintStiffness * 5, 0.18),
+        damping: Math.max(worldSettings.constraintDamping, 8),
+        tearThreshold: null,
+      });
+      controller.setInput(playerInputRef.current);
+      characterControllerRef.current = controller;
+    });
+    setMouseMode('playerControl');
+  }, [recreateWorld]);
+
   const openBenchmarkScenarioInPlayground = useCallback(
     (scenarioId: string) => {
       const scenario = getBenchmarkScenarioById(scenarioId);
@@ -277,8 +414,16 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
     recreateWorld(loadDefaultScene, DEFAULT_SETTINGS);
   }, [recreateWorld]);
 
-  const handleBeforeStep = useCallback((world: PhysicsWorld) => {
+  const handleBeforeStep = useCallback((world: PhysicsWorld, deltaTime: number) => {
     const pointerWorld = getInteractionPointerWorld(pointerRef.current.world, mouseModeRef.current, settingsRef.current);
+
+    if (mouseModeRef.current === 'playerControl') {
+      playerInputRef.current.aimTarget = pointerRef.current.world;
+      void world;
+      void deltaTime;
+      characterControllerRef.current?.setInput(playerInputRef.current);
+      return;
+    }
 
     if (!pointerWorld || !pointerRef.current.primaryDown) {
       return;
@@ -420,6 +565,10 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
 
         interactionRef.current.pendingConstraintStartPointId = targetPoint.id;
         pointerRef.current.primaryDown = true;
+        break;
+      }
+
+      case 'playerControl': {
         break;
       }
     }
@@ -565,6 +714,9 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
           </button>
           <button className="toolbar__button" onClick={() => recreateWorld(loadBridgeValidationScene)}>
             Bridge Test
+          </button>
+          <button className="toolbar__button" onClick={loadCharacterDemo}>
+            Character Demo
           </button>
           <button className="toolbar__button" onClick={() => recreateWorld(loadLayerShowcaseScene)}>
             Layer Test
@@ -788,6 +940,28 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
                 <div className="panel-note">Auto only works when the two points share exactly one layer. Invalid or ambiguous matches are blocked before the engine call.</div>
               </>
             )}
+
+            {mouseMode === 'playerControl' && (
+              <>
+                <NumberControl
+                  label="Player size"
+                  min={0.5}
+                  max={3}
+                  step={0.05}
+                  value={settings.playerSize}
+                  onChange={(value) => updateSetting('playerSize', value)}
+                />
+                <div className="player-tool-actions">
+                  <button className="toolbar__button toolbar__button--accent" type="button" onClick={spawnPlayerAtPointerOrCenter}>
+                    Spawn Player
+                  </button>
+                  <button className="toolbar__button" type="button" onClick={removePlayer}>
+                    Remove Player
+                  </button>
+                </div>
+                <div className="panel-note">Input is wired for `A`, `D`, `W`, `S`, `Space`, and mouse aim. The controller currently stores that input but does not act on it yet.</div>
+              </>
+            )}
           </div>
         </aside>
 
@@ -890,6 +1064,7 @@ const MOUSE_MODE_OPTIONS: Array<{ value: MouseMode; label: string }> = [
   { value: 'deleteConstraint', label: 'Delete Constraint' },
   { value: 'createPoint', label: 'Create Point' },
   { value: 'createConstraint', label: 'Create Constraint' },
+  { value: 'playerControl', label: 'Player Control' },
 ];
 
 const CONSTRAINT_LAYER_OPTIONS: Array<{ value: 'auto' | -1 | 0 | 1; label: string }> = [
@@ -898,3 +1073,7 @@ const CONSTRAINT_LAYER_OPTIONS: Array<{ value: 'auto' | -1 | 0 | 1; label: strin
   { value: 0, label: 'Layer 0' },
   { value: 1, label: 'Layer 1' },
 ];
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+}

@@ -1,5 +1,6 @@
 import { SpatialHashGrid } from "../collision/spatialHashGrid.ts";
 import type {
+  ApplyPointForceOptions,
   ApplyRadialForceOptions,
   ConstraintId,
   ConstraintSnapshot,
@@ -11,7 +12,12 @@ import type {
   PhysicsWorld,
   PointId,
   PointSnapshot,
+  RaycastHit,
+  RaycastOptions,
+  SetConstraintRestLengthOptions,
+  SetPointIgnoredConstraintsOptions,
   SetPointPositionOptions,
+  WorldController,
   WorldConfig,
   WorldSnapshot,
 } from "../entities/types.ts";
@@ -32,6 +38,7 @@ interface PointState {
   pinned: boolean;
   layers: LayerId[];
   collisionsEnabled: boolean;
+  ignoredConstraintIds: Set<ConstraintId>;
 }
 
 interface ConstraintState {
@@ -61,6 +68,8 @@ const DEFAULT_WORLD_CONFIG: WorldConfig = {
 };
 
 const EPSILON = 1e-6;
+/** Max distance outside the world AABB where a ray with no forward edge hit still counts as touching the bounds (e.g. ground ray from slightly below the floor). */
+const WORLD_BOUNDS_RAYCAST_SLACK = 5;
 const REFERENCE_DELTA_TIME = 1 / 60;
 
 function toWorldConfig(options: CreateWorldOptions): WorldConfig {
@@ -80,6 +89,7 @@ function toWorldConfig(options: CreateWorldOptions): WorldConfig {
 class SoftBodyWorld implements PhysicsWorld {
   private readonly points: Array<PointState | undefined> = [];
   private readonly constraints: Array<ConstraintState | undefined> = [];
+  private readonly controllers = new Set<WorldController>();
   private readonly broadphase: SpatialHashGrid;
 
   private maxColliderRadius = 0;
@@ -107,6 +117,7 @@ class SoftBodyWorld implements PhysicsWorld {
       pinned: Boolean(options.pinned),
       layers,
       collisionsEnabled: options.collisionsEnabled ?? true,
+      ignoredConstraintIds: new Set(normalizeConstraintIds(options.ignoredConstraintIds)),
     };
 
     this.points[id] = point;
@@ -140,6 +151,37 @@ class SoftBodyWorld implements PhysicsWorld {
     return id;
   }
 
+  registerController(controller: WorldController): void {
+    this.controllers.add(controller);
+  }
+
+  deregisterController(controller: WorldController): void {
+    this.controllers.delete(controller);
+  }
+
+  getPoint(pointId: PointId): PointSnapshot | null {
+    const point = this.points[pointId];
+    return point ? toPointSnapshot(point) : null;
+  }
+
+  getConstraint(constraintId: ConstraintId): ConstraintSnapshot | null {
+    const constraint = this.constraints[constraintId];
+
+    if (!constraint) {
+      return null;
+    }
+
+    const pointA = this.points[constraint.pointAId];
+    const pointB = this.points[constraint.pointBId];
+
+    if (!pointA || !pointB) {
+      return null;
+    }
+
+    const currentLength = distance(pointA, pointB);
+    return toConstraintSnapshot(constraint, currentLength);
+  }
+
   setPointPosition(options: SetPointPositionOptions): void {
     const point = this.requirePoint(options.pointId);
 
@@ -149,6 +191,17 @@ class SoftBodyWorld implements PhysicsWorld {
     point.prevY = options.previousPosition?.y ?? options.position.y;
     point.ax = 0;
     point.ay = 0;
+  }
+
+  setConstraintRestLength(options: SetConstraintRestLengthOptions): void {
+    const constraint = this.requireConstraint(options.constraintId);
+    constraint.restLength = Math.max(options.length, EPSILON);
+    constraint.xpbdLambda = 0;
+  }
+
+  setPointIgnoredConstraints(options: SetPointIgnoredConstraintsOptions): void {
+    const point = this.requirePoint(options.pointId);
+    point.ignoredConstraintIds = new Set(normalizeConstraintIds(options.ignoredConstraintIds));
   }
 
   removePoint(pointId: PointId): void {
@@ -164,7 +217,6 @@ class SoftBodyWorld implements PhysicsWorld {
         this.constraints[constraint.id] = undefined;
       }
     }
-
   }
 
   removeConstraint(constraintId: ConstraintId): void {
@@ -198,6 +250,79 @@ class SoftBodyWorld implements PhysicsWorld {
     }
   }
 
+  applyPointForce(options: ApplyPointForceOptions): void {
+    const point = this.requirePoint(options.pointId);
+
+    if (point.pinned || point.invMass <= EPSILON) {
+      return;
+    }
+
+    point.ax += options.force.x * point.invMass;
+    point.ay += options.force.y * point.invMass;
+  }
+
+  raycast(options: RaycastOptions): RaycastHit | null {
+    const directionLength = Math.hypot(options.direction.x, options.direction.y);
+    const maxDistance = Math.max(0, options.maxDistance);
+
+    if (directionLength <= EPSILON || maxDistance <= EPSILON) {
+      return null;
+    }
+
+    this.rebuildBroadphase(); // Might be stupid to do it every time
+
+    const directionX = options.direction.x / directionLength;
+    const directionY = options.direction.y / directionLength;
+    const endX = options.origin.x + directionX * maxDistance;
+    const endY = options.origin.y + directionY * maxDistance;
+    const layers = this.getRaycastLayers(options.layers);
+    const ignoredConstraintIds = new Set(normalizeConstraintIds(options.ignoreConstraintIds));
+    let nearestHit = options.includeWorldBounds === false ? null : this.raycastWorldBounds(options.origin, directionX, directionY, maxDistance);
+    const candidateConstraintIds = this.broadphase.queryBounds(
+      Math.min(options.origin.x, endX),
+      Math.min(options.origin.y, endY),
+      Math.max(options.origin.x, endX),
+      Math.max(options.origin.y, endY),
+      layers,
+    );
+
+    for (const constraintId of candidateConstraintIds) {
+      if (ignoredConstraintIds.has(constraintId)) {
+        continue;
+      }
+
+      const constraint = this.constraints[constraintId];
+
+      if (!constraint?.enabled || constraint.collisionRadius <= 0) {
+        continue;
+      }
+
+      const pointA = this.points[constraint.pointAId];
+      const pointB = this.points[constraint.pointBId];
+
+      if (!pointA || !pointB) {
+        continue;
+      }
+
+      const hit = raycastCapsule(options.origin, directionX, directionY, maxDistance, pointA, pointB, constraint.collisionRadius);
+
+      if (!hit || (nearestHit && hit.distance >= nearestHit.distance)) {
+        continue;
+      }
+
+      nearestHit = {
+        kind: "constraint",
+        point: { x: hit.pointX, y: hit.pointY },
+        normal: { x: hit.normalX, y: hit.normalY },
+        distance: hit.distance,
+        constraintId: constraint.id,
+        layer: constraint.layer,
+      };
+    }
+
+    return nearestHit;
+  }
+
   setConfig(config: Partial<WorldConfig>): void {
     this.config = {
       ...this.config,
@@ -229,16 +354,7 @@ class SoftBodyWorld implements PhysicsWorld {
         continue;
       }
 
-      points.push({
-        id: point.id,
-        position: { x: point.x, y: point.y },
-        previousPosition: { x: point.prevX, y: point.prevY },
-        radius: point.radius,
-        mass: point.invMass === 0 ? Number.POSITIVE_INFINITY : 1 / point.invMass,
-        pinned: point.pinned,
-        layers: [...point.layers],
-        collisionsEnabled: point.collisionsEnabled,
-      });
+      points.push(toPointSnapshot(point));
     }
 
     for (const constraint of this.constraints) {
@@ -255,20 +371,7 @@ class SoftBodyWorld implements PhysicsWorld {
 
       const currentLength = distance(pointA, pointB);
 
-      constraints.push({
-        id: constraint.id,
-        pointAId: constraint.pointAId,
-        pointBId: constraint.pointBId,
-        restLength: constraint.restLength,
-        currentLength,
-        stiffness: constraint.stiffness,
-        damping: constraint.damping,
-        tearThreshold: constraint.tearThreshold,
-        collisionRadius: constraint.collisionRadius,
-        stretchRatio: currentLength / constraint.restLength,
-        enabled: constraint.enabled,
-        layer: constraint.layer,
-      });
+      constraints.push(toConstraintSnapshot(constraint, currentLength));
     }
 
     return {
@@ -282,6 +385,10 @@ class SoftBodyWorld implements PhysicsWorld {
   step(deltaTime: number, useXPBDSolver = false): void {
     if (deltaTime <= 0) {
       return;
+    }
+
+    for (const controller of [...this.controllers]) {
+      controller.update(deltaTime);
     }
 
     this.integrate(deltaTime);
@@ -307,6 +414,7 @@ class SoftBodyWorld implements PhysicsWorld {
   clear(): void {
     this.points.length = 0;
     this.constraints.length = 0;
+    this.controllers.clear();
     this.maxColliderRadius = 0;
     this.broadphase.clear();
   }
@@ -569,11 +677,7 @@ class SoftBodyWorld implements PhysicsWorld {
           continue;
         }
 
-        if (point.id === pointA.id || point.id === pointB.id) {
-          continue;
-        }
-
-        if (!point.layers.includes(constraint.layer)) {
+        if (this.shouldIgnorePointConstraintCollision(point, constraint)) {
           continue;
         }
 
@@ -660,6 +764,122 @@ class SoftBodyWorld implements PhysicsWorld {
         constraint.xpbdLambda = 0;
       }
     }
+  }
+
+  private shouldIgnorePointConstraintCollision(point: PointState, constraint: ConstraintState): boolean {
+    if (point.id === constraint.pointAId || point.id === constraint.pointBId) {
+      return true;
+    }
+
+    if (!point.layers.includes(constraint.layer)) {
+      return true;
+    }
+
+    return point.ignoredConstraintIds.has(constraint.id);
+  }
+
+  private getRaycastLayers(layers?: readonly LayerId[]): LayerId[] {
+    if (layers && layers.length > 0) {
+      return normalizePointLayers([...layers]);
+    }
+
+    const activeLayers = new Set<LayerId>();
+
+    for (const constraint of this.constraints) {
+      if (constraint?.enabled && constraint.collisionRadius > 0) {
+        activeLayers.add(constraint.layer);
+      }
+    }
+
+    return activeLayers.size > 0 ? [...activeLayers] : [0];
+  }
+
+  private raycastWorldBounds(origin: { x: number; y: number }, directionX: number, directionY: number, maxDistance: number): RaycastHit | null {
+    let nearestHit: RaycastHit | null = null;
+
+    const tryHit = (distanceToHit: number, pointX: number, pointY: number, normalX: number, normalY: number) => {
+      if (distanceToHit < 0 || distanceToHit > maxDistance || (nearestHit && distanceToHit >= nearestHit.distance)) {
+        return;
+      }
+
+      nearestHit = {
+        kind: "worldBounds",
+        point: { x: pointX, y: pointY },
+        normal: { x: normalX, y: normalY },
+        distance: distanceToHit,
+      };
+    };
+
+    if (Math.abs(directionX) > EPSILON) {
+      const leftDistance = (0 - origin.x) / directionX;
+      const leftY = origin.y + directionY * leftDistance;
+
+      if (leftY >= 0 && leftY <= this.config.size.y) {
+        tryHit(leftDistance, 0, leftY, 1, 0);
+      }
+
+      const rightDistance = (this.config.size.x - origin.x) / directionX;
+      const rightY = origin.y + directionY * rightDistance;
+
+      if (rightY >= 0 && rightY <= this.config.size.y) {
+        tryHit(rightDistance, this.config.size.x, rightY, -1, 0);
+      }
+    }
+
+    if (Math.abs(directionY) > EPSILON) {
+      const topDistance = (0 - origin.y) / directionY;
+      const topX = origin.x + directionX * topDistance;
+
+      if (topX >= 0 && topX <= this.config.size.x) {
+        tryHit(topDistance, topX, 0, 0, 1);
+      }
+
+      const bottomDistance = (this.config.size.y - origin.y) / directionY;
+      const bottomX = origin.x + directionX * bottomDistance;
+
+      if (bottomX >= 0 && bottomX <= this.config.size.x) {
+        tryHit(bottomDistance, bottomX, this.config.size.y, 0, -1);
+      }
+    }
+
+    if (nearestHit !== null) {
+      return nearestHit;
+    }
+
+    const sx = this.config.size.x;
+    const sy = this.config.size.y;
+    const penetrationX = Math.max(0, -origin.x, origin.x - sx);
+    const penetrationY = Math.max(0, -origin.y, origin.y - sy);
+    const distOutside = Math.hypot(penetrationX, penetrationY);
+
+    if (distOutside <= EPSILON || distOutside > WORLD_BOUNDS_RAYCAST_SLACK) {
+      return null;
+    }
+
+    const closestX = Math.max(0, Math.min(sx, origin.x));
+    const closestY = Math.max(0, Math.min(sy, origin.y));
+
+    let normalX = 0;
+    let normalY = 0;
+
+    if (penetrationX >= penetrationY && penetrationX > EPSILON) {
+      normalX = origin.x < closestX ? 1 : -1;
+    }
+
+    if (normalX === 0 && penetrationY > EPSILON) {
+      normalY = origin.y < closestY ? 1 : -1;
+    }
+
+    if (normalX === 0 && normalY === 0) {
+      return null;
+    }
+
+    return {
+      kind: "worldBounds",
+      point: { x: closestX, y: closestY },
+      normal: { x: normalX, y: normalY },
+      distance: 0,
+    };
   }
 
   private mapLegacyStiffnessToPerIterationStiffness(stiffness: number, deltaTime: number): number {
@@ -826,7 +1046,6 @@ class SoftBodyWorld implements PhysicsWorld {
         this.constraints[constraint.id] = undefined;
       }
     }
-
   }
 
   private getVelocityX(point: PointState, deltaTime: number): number {
@@ -847,6 +1066,230 @@ export function createWorld(options: CreateWorldOptions): PhysicsWorld {
   return new SoftBodyWorld(options);
 }
 
+function toPointSnapshot(point: PointState): PointSnapshot {
+  return {
+    id: point.id,
+    position: { x: point.x, y: point.y },
+    previousPosition: { x: point.prevX, y: point.prevY },
+    radius: point.radius,
+    mass: point.invMass === 0 ? Number.POSITIVE_INFINITY : 1 / point.invMass,
+    pinned: point.pinned,
+    layers: [...point.layers],
+    collisionsEnabled: point.collisionsEnabled,
+  };
+}
+
+function toConstraintSnapshot(constraint: ConstraintState, currentLength: number): ConstraintSnapshot {
+  return {
+    id: constraint.id,
+    pointAId: constraint.pointAId,
+    pointBId: constraint.pointBId,
+    restLength: constraint.restLength,
+    currentLength,
+    stiffness: constraint.stiffness,
+    damping: constraint.damping,
+    tearThreshold: constraint.tearThreshold,
+    collisionRadius: constraint.collisionRadius,
+    stretchRatio: currentLength / constraint.restLength,
+    enabled: constraint.enabled,
+    layer: constraint.layer,
+  };
+}
+
+interface CapsuleRaycastResult {
+  pointX: number;
+  pointY: number;
+  normalX: number;
+  normalY: number;
+  distance: number;
+}
+
+function normalizeConstraintIds(ids?: readonly ConstraintId[]): ConstraintId[] {
+  if (!ids || ids.length === 0) {
+    return [];
+  }
+
+  const normalizedIds = new Set<ConstraintId>();
+
+  for (const id of ids) {
+    if (Number.isInteger(id) && id >= 0) {
+      normalizedIds.add(id);
+    }
+  }
+
+  return [...normalizedIds];
+}
+
+function raycastCapsule(
+  origin: { x: number; y: number },
+  directionX: number,
+  directionY: number,
+  maxDistance: number,
+  segmentStart: { x: number; y: number },
+  segmentEnd: { x: number; y: number },
+  radius: number,
+): CapsuleRaycastResult | null {
+  const insideClosestPoint = closestPointOnSegment(origin, segmentStart, segmentEnd);
+  const insideDeltaX = origin.x - insideClosestPoint.x;
+  const insideDeltaY = origin.y - insideClosestPoint.y;
+  const insideDistanceSquared = insideDeltaX * insideDeltaX + insideDeltaY * insideDeltaY;
+
+  if (insideDistanceSquared <= radius * radius) {
+    const insideDistance = Math.sqrt(insideDistanceSquared);
+
+    if (insideDistance > EPSILON) {
+      return {
+        pointX: origin.x,
+        pointY: origin.y,
+        normalX: insideDeltaX / insideDistance,
+        normalY: insideDeltaY / insideDistance,
+        distance: 0,
+      };
+    }
+
+    const segmentX = segmentEnd.x - segmentStart.x;
+    const segmentY = segmentEnd.y - segmentStart.y;
+    const segmentLength = Math.hypot(segmentX, segmentY);
+
+    if (segmentLength > EPSILON) {
+      return {
+        pointX: origin.x,
+        pointY: origin.y,
+        normalX: -segmentY / segmentLength,
+        normalY: segmentX / segmentLength,
+        distance: 0,
+      };
+    }
+
+    return {
+      pointX: origin.x,
+      pointY: origin.y,
+      normalX: 0,
+      normalY: -1,
+      distance: 0,
+    };
+  }
+
+  let nearestHit: CapsuleRaycastResult | null = null;
+  const tryHit = (candidate: CapsuleRaycastResult | null) => {
+    if (!candidate || candidate.distance < 0 || candidate.distance > maxDistance) {
+      return;
+    }
+
+    if (!nearestHit || candidate.distance < nearestHit.distance) {
+      nearestHit = candidate;
+    }
+  };
+
+  const segmentX = segmentEnd.x - segmentStart.x;
+  const segmentY = segmentEnd.y - segmentStart.y;
+  const segmentLength = Math.hypot(segmentX, segmentY);
+
+  if (segmentLength > EPSILON) {
+    const normalX = -segmentY / segmentLength;
+    const normalY = segmentX / segmentLength;
+
+    for (const sign of [-1, 1]) {
+      const offsetStartX = segmentStart.x + normalX * radius * sign;
+      const offsetStartY = segmentStart.y + normalY * radius * sign;
+      const denominator = cross(directionX, directionY, segmentX, segmentY);
+
+      if (Math.abs(denominator) <= EPSILON) {
+        continue;
+      }
+
+      const relativeX = offsetStartX - origin.x;
+      const relativeY = offsetStartY - origin.y;
+      const distanceToHit = cross(relativeX, relativeY, segmentX, segmentY) / denominator;
+      const segmentT = cross(relativeX, relativeY, directionX, directionY) / denominator;
+
+      if (distanceToHit < 0 || distanceToHit > maxDistance || segmentT < 0 || segmentT > 1) {
+        continue;
+      }
+
+      tryHit(buildCapsuleHit(origin.x + directionX * distanceToHit, origin.y + directionY * distanceToHit, distanceToHit, segmentStart, segmentEnd));
+    }
+  }
+
+  tryHit(raycastCircle(origin, directionX, directionY, maxDistance, segmentStart, radius));
+  tryHit(raycastCircle(origin, directionX, directionY, maxDistance, segmentEnd, radius));
+
+  return nearestHit;
+}
+
+function raycastCircle(
+  origin: { x: number; y: number },
+  directionX: number,
+  directionY: number,
+  maxDistance: number,
+  center: { x: number; y: number },
+  radius: number,
+): CapsuleRaycastResult | null {
+  const offsetX = origin.x - center.x;
+  const offsetY = origin.y - center.y;
+  const b = 2 * (offsetX * directionX + offsetY * directionY);
+  const c = offsetX * offsetX + offsetY * offsetY - radius * radius;
+  const discriminant = b * b - 4 * c;
+
+  if (discriminant < 0) {
+    return null;
+  }
+
+  const sqrtDiscriminant = Math.sqrt(discriminant);
+  const nearDistance = (-b - sqrtDiscriminant) / 2;
+  const farDistance = (-b + sqrtDiscriminant) / 2;
+  const distanceToHit = nearDistance >= 0 ? nearDistance : farDistance >= 0 ? farDistance : -1;
+
+  if (distanceToHit < 0 || distanceToHit > maxDistance) {
+    return null;
+  }
+
+  const pointX = origin.x + directionX * distanceToHit;
+  const pointY = origin.y + directionY * distanceToHit;
+  const normalLength = Math.hypot(pointX - center.x, pointY - center.y);
+
+  if (normalLength <= EPSILON) {
+    return null;
+  }
+
+  return {
+    pointX,
+    pointY,
+    normalX: (pointX - center.x) / normalLength,
+    normalY: (pointY - center.y) / normalLength,
+    distance: distanceToHit,
+  };
+}
+
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function cross(ax: number, ay: number, bx: number, by: number): number {
+  return ax * by - ay * bx;
+}
+
+function buildCapsuleHit(
+  pointX: number,
+  pointY: number,
+  distance: number,
+  segmentStart: { x: number; y: number },
+  segmentEnd: { x: number; y: number },
+): CapsuleRaycastResult | null {
+  const closestPoint = closestPointOnSegment({ x: pointX, y: pointY }, segmentStart, segmentEnd);
+  const normalX = pointX - closestPoint.x;
+  const normalY = pointY - closestPoint.y;
+  const normalLength = Math.hypot(normalX, normalY);
+
+  if (normalLength <= EPSILON) {
+    return null;
+  }
+
+  return {
+    pointX,
+    pointY,
+    normalX: normalX / normalLength,
+    normalY: normalY / normalLength,
+    distance,
+  };
 }

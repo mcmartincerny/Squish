@@ -49,6 +49,24 @@ export class SpatialHashGrid {
     const minCellY = Math.floor((y - radius) / this.cellSize)
     const maxCellX = Math.floor((x + radius) / this.cellSize)
     const maxCellY = Math.floor((y + radius) / this.cellSize)
+    return this.queryCells(minCellX, minCellY, maxCellX, maxCellY, layers)
+  }
+
+  queryBounds(minX: number, minY: number, maxX: number, maxY: number, layers: readonly LayerId[]): number[] {
+    const minCellX = Math.floor(minX / this.cellSize)
+    const minCellY = Math.floor(minY / this.cellSize)
+    const maxCellX = Math.floor(maxX / this.cellSize)
+    const maxCellY = Math.floor(maxY / this.cellSize)
+    return this.queryCells(minCellX, minCellY, maxCellX, maxCellY, layers)
+  }
+
+  private queryCells(
+    minCellX: number,
+    minCellY: number,
+    maxCellX: number,
+    maxCellY: number,
+    layers: readonly LayerId[],
+  ): number[] {
     const seen = new Set<number>()
 
     for (const layer of layers) {
