@@ -119,6 +119,9 @@ export function drawWorld(
     }
 
     context.strokeStyle = getCapsuleColor(constraint.layer);
+    if (Math.floor(Math.abs(constraint.collisionRadius) * 100) % 10 === 1) {
+      context.strokeStyle = "rgba(255, 0, 0, 1)";
+    }
     context.lineWidth = constraint.collisionRadius * 2;
     context.beginPath();
     context.moveTo(pointA.position.x, pointA.position.y);
@@ -223,7 +226,7 @@ function getPointColor(layers: number[]): string {
 
 function getCapsuleColor(layer: number): string {
   if (layer < 0) {
-    return "rgb(255, 86, 81)";
+    return "rgba(255, 86, 81, 0.38)";
   }
 
   if (layer === 0) {
@@ -260,4 +263,3 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
     b: Number.parseInt(hex.slice(5, 7), 16),
   };
 }
-

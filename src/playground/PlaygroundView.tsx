@@ -45,6 +45,29 @@ const CONSTRAINT_HIT_RADIUS_PIXELS = 10;
 
 type MouseMode = 'pull' | 'push' | 'drag' | 'deletePoint' | 'deleteConstraint' | 'createPoint' | 'createConstraint' | 'playerControl';
 
+const KNOWN_SCENE_IDS = [
+  'default',
+  'empty',
+  'walls',
+  'capsule-endpoint',
+  'bridge',
+  'character-demo',
+  'layer',
+] as const;
+
+type KnownSceneId = (typeof KNOWN_SCENE_IDS)[number];
+
+const ALL_MOUSE_MODES: MouseMode[] = [
+  'pull',
+  'push',
+  'drag',
+  'deletePoint',
+  'deleteConstraint',
+  'createPoint',
+  'createConstraint',
+  'playerControl',
+];
+
 interface WorldStats {
   points: number;
   constraints: number;
@@ -69,10 +92,15 @@ interface PlaygroundViewProps {
 }
 
 export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
-  const [settings, setSettings] = useState<PlaygroundSettings>(loadSettings);
+  const persistedRef = useRef(loadPersisted());
+  const p0 = persistedRef.current;
+
+  const [settings, setSettings] = useState<PlaygroundSettings>(() => p0.settings);
   const [paused, setPaused] = useState(false);
-  const [mouseMode, setMouseMode] = useState<MouseMode>('pull');
-  const [selectedBenchmarkScenarioId, setSelectedBenchmarkScenarioId] = useState<string>(BENCHMARK_SCENARIOS[0]?.id ?? '');
+  const [mouseMode, setMouseMode] = useState<MouseMode>(() => p0.mouseMode);
+  const [previousMouseMode, setPreviousMouseMode] = useState<MouseMode>(() => p0.previousMouseMode);
+  const [activeSceneId, setActiveSceneId] = useState<string>(() => p0.activeSceneId);
+  const [selectedBenchmarkScenarioId, setSelectedBenchmarkScenarioId] = useState<string>(() => p0.selectedBenchmarkScenarioId);
   const [camera, setCamera] = useState<CameraState>({
     zoom: 1,
     offsetX: 0,
@@ -123,8 +151,26 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
   }, [mouseMode]);
 
   useEffect(() => {
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  }, [settings]);
+    window.localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        settings,
+        mouseMode,
+        previousMouseMode,
+        activeSceneId,
+        selectedBenchmarkScenarioId,
+      }),
+    );
+  }, [settings, mouseMode, previousMouseMode, activeSceneId, selectedBenchmarkScenarioId]);
+
+  const selectMouseMode = useCallback((next: MouseMode) => {
+    setMouseMode((current) => {
+      if (next === 'playerControl' && current !== 'playerControl') {
+        setPreviousMouseMode(current);
+      }
+      return next;
+    });
+  }, []);
 
   const fitCameraIfPossible = useCallback((worldSettings: PlaygroundSettings) => {
     if (canvasSizeRef.current.width <= 0 || canvasSizeRef.current.height <= 0) {
@@ -213,15 +259,6 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
     },
     [cleanupTemporaryInteraction, fitCameraIfPossible],
   );
-
-  useEffect(() => {
-    if (hasInitializedRef.current) {
-      return;
-    }
-
-    hasInitializedRef.current = true;
-    recreateWorld(loadDefaultScene);
-  }, [recreateWorld]);
 
   useEffect(() => {
     if (!worldRef.current) {
@@ -387,8 +424,20 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
       controller.setInput(playerInputRef.current);
       characterControllerRef.current = controller;
     });
-    setMouseMode('playerControl');
   }, [recreateWorld]);
+
+  useEffect(() => {
+    if (hasInitializedRef.current) {
+      return;
+    }
+
+    hasInitializedRef.current = true;
+    const persisted = persistedRef.current;
+    runInitialPlaygroundScene(persisted.activeSceneId, persisted.selectedBenchmarkScenarioId, {
+      recreateWorld,
+      loadCharacterDemo,
+    });
+  }, [recreateWorld, loadCharacterDemo]);
 
   const openBenchmarkScenarioInPlayground = useCallback(
     (scenarioId: string) => {
@@ -398,6 +447,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
         return;
       }
 
+      setActiveSceneId(`benchmark:${scenarioId}`);
       recreateWorld((world) => scenario.setup(world), scenario.settings);
     },
     [recreateWorld],
@@ -411,6 +461,10 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
     window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
     settingsRef.current = DEFAULT_SETTINGS;
     setSettings(DEFAULT_SETTINGS);
+    setMouseMode('pull');
+    setPreviousMouseMode('pull');
+    setActiveSceneId('default');
+    setSelectedBenchmarkScenarioId(BENCHMARK_SCENARIOS[0]?.id ?? '');
     recreateWorld(loadDefaultScene, DEFAULT_SETTINGS);
   }, [recreateWorld]);
 
@@ -697,28 +751,70 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
           <button className="toolbar__button" onClick={() => setPaused((current) => !current)}>
             {paused ? 'Resume' : 'Pause'}
           </button>
-          <button className="toolbar__button" onClick={() => recreateWorld(loadDefaultScene)}>
+          <button
+            className={`toolbar__button${activeSceneId === 'default' ? ' toolbar__button--scene-active' : ''}`}
+            onClick={() => {
+              setActiveSceneId('default');
+              recreateWorld(loadDefaultScene);
+            }}
+          >
             Reset
           </button>
-          <button className="toolbar__button" onClick={() => recreateWorld(loadEmptyScene)}>
+          <button
+            className={`toolbar__button${activeSceneId === 'empty' ? ' toolbar__button--scene-active' : ''}`}
+            onClick={() => {
+              setActiveSceneId('empty');
+              recreateWorld(loadEmptyScene);
+            }}
+          >
             Clear scene
           </button>
           <button className="toolbar__button" onClick={handleResetControls}>
             Reset Controls
           </button>
-          <button className="toolbar__button" onClick={() => recreateWorld(loadWallsValidationScene)}>
+          <button
+            className={`toolbar__button${activeSceneId === 'walls' ? ' toolbar__button--scene-active' : ''}`}
+            onClick={() => {
+              setActiveSceneId('walls');
+              recreateWorld(loadWallsValidationScene);
+            }}
+          >
             Walls Test
           </button>
-          <button className="toolbar__button" onClick={() => recreateWorld(loadCapsuleEndpointValidationScene)}>
+          <button
+            className={`toolbar__button${activeSceneId === 'capsule-endpoint' ? ' toolbar__button--scene-active' : ''}`}
+            onClick={() => {
+              setActiveSceneId('capsule-endpoint');
+              recreateWorld(loadCapsuleEndpointValidationScene);
+            }}
+          >
             Endpoint Test
           </button>
-          <button className="toolbar__button" onClick={() => recreateWorld(loadBridgeValidationScene)}>
+          <button
+            className={`toolbar__button${activeSceneId === 'bridge' ? ' toolbar__button--scene-active' : ''}`}
+            onClick={() => {
+              setActiveSceneId('bridge');
+              recreateWorld(loadBridgeValidationScene);
+            }}
+          >
             Bridge Test
           </button>
-          <button className="toolbar__button" onClick={loadCharacterDemo}>
+          <button
+            className={`toolbar__button${activeSceneId === 'character-demo' ? ' toolbar__button--scene-active' : ''}`}
+            onClick={() => {
+              setActiveSceneId('character-demo');
+              loadCharacterDemo();
+            }}
+          >
             Character Demo
           </button>
-          <button className="toolbar__button" onClick={() => recreateWorld(loadLayerShowcaseScene)}>
+          <button
+            className={`toolbar__button${activeSceneId === 'layer' ? ' toolbar__button--scene-active' : ''}`}
+            onClick={() => {
+              setActiveSceneId('layer');
+              recreateWorld(loadLayerShowcaseScene);
+            }}
+          >
             Layer Test
           </button>
           <button className="toolbar__button toolbar__button--accent" onClick={onOpenBenchmarkRunner}>
@@ -749,7 +845,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
 
         <div className="toolbar__group">
           <select
-            className="toolbar__select"
+            className={`toolbar__select${activeSceneId.startsWith('benchmark:') ? ' toolbar__select--active' : ''}`}
             value={selectedBenchmarkScenarioId}
             onChange={(event) => setSelectedBenchmarkScenarioId(event.target.value)}
           >
@@ -759,7 +855,10 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
               </option>
             ))}
           </select>
-          <button className="toolbar__button" onClick={() => openBenchmarkScenarioInPlayground(selectedBenchmarkScenarioId)}>
+          <button
+            className={`toolbar__button${activeSceneId.startsWith('benchmark:') ? ' toolbar__button--scene-active' : ''}`}
+            onClick={() => openBenchmarkScenarioInPlayground(selectedBenchmarkScenarioId)}
+          >
             Open Bench Scene
           </button>
         </div>
@@ -809,8 +908,12 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
             {MOUSE_MODE_OPTIONS.map((option) => (
               <button
                 key={option.value}
-                className={`mode-button${mouseMode === option.value ? ' mode-button--active' : ''}`}
-                onClick={() => setMouseMode(option.value)}
+                className={`mode-button${mouseMode === option.value ? ' mode-button--active' : ''}${
+                  mouseMode === 'playerControl' && previousMouseMode === option.value && option.value !== 'playerControl'
+                    ? ' mode-button--previous'
+                    : ''
+                }`}
+                onClick={() => selectMouseMode(option.value)}
                 type="button"
               >
                 {option.label}
@@ -989,20 +1092,133 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
   );
 }
 
-function loadSettings(): PlaygroundSettings {
+function parseMouseMode(raw: unknown): MouseMode | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+
+  return ALL_MOUSE_MODES.includes(raw as MouseMode) ? (raw as MouseMode) : null;
+}
+
+function parseActiveSceneId(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return 'default';
+  }
+
+  if (raw.startsWith('benchmark:')) {
+    return raw;
+  }
+
+  return KNOWN_SCENE_IDS.includes(raw as KnownSceneId) ? raw : 'default';
+}
+
+function loadPersisted(): {
+  settings: PlaygroundSettings;
+  mouseMode: MouseMode;
+  previousMouseMode: MouseMode;
+  activeSceneId: string;
+  selectedBenchmarkScenarioId: string;
+} {
+  const benchmarkDefault = BENCHMARK_SCENARIOS[0]?.id ?? '';
+  const defaults = {
+    settings: DEFAULT_SETTINGS,
+    mouseMode: 'pull' as MouseMode,
+    previousMouseMode: 'pull' as MouseMode,
+    activeSceneId: 'default',
+    selectedBenchmarkScenarioId: benchmarkDefault,
+  };
+
   try {
     const rawValue = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
 
     if (!rawValue) {
-      return DEFAULT_SETTINGS;
+      return defaults;
+    }
+
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+
+    if (parsed && typeof parsed === 'object' && 'settings' in parsed && parsed.settings && typeof parsed.settings === 'object') {
+      const mouse = parseMouseMode(parsed.mouseMode);
+      const previous = parseMouseMode(parsed.previousMouseMode);
+      const activeSceneIdResolved = parseActiveSceneId(parsed.activeSceneId);
+      let selectedBench =
+        typeof parsed.selectedBenchmarkScenarioId === 'string' ? parsed.selectedBenchmarkScenarioId : benchmarkDefault;
+      if (activeSceneIdResolved.startsWith('benchmark:')) {
+        const fromScene = activeSceneIdResolved.slice('benchmark:'.length);
+        if (fromScene && getBenchmarkScenarioById(fromScene)) {
+          selectedBench = fromScene;
+        }
+      }
+
+      return {
+        settings: { ...DEFAULT_SETTINGS, ...(parsed.settings as Partial<PlaygroundSettings>) },
+        mouseMode: mouse ?? defaults.mouseMode,
+        previousMouseMode: previous ?? defaults.previousMouseMode,
+        activeSceneId: activeSceneIdResolved,
+        selectedBenchmarkScenarioId: selectedBench,
+      };
     }
 
     return {
-      ...DEFAULT_SETTINGS,
-      ...(JSON.parse(rawValue) as Partial<PlaygroundSettings>),
+      settings: { ...DEFAULT_SETTINGS, ...(parsed as Partial<PlaygroundSettings>) },
+      mouseMode: defaults.mouseMode,
+      previousMouseMode: defaults.previousMouseMode,
+      activeSceneId: defaults.activeSceneId,
+      selectedBenchmarkScenarioId: benchmarkDefault,
     };
   } catch {
-    return DEFAULT_SETTINGS;
+    return defaults;
+  }
+}
+
+function runInitialPlaygroundScene(
+  sceneId: string,
+  benchmarkFallbackId: string,
+  actions: {
+    recreateWorld: (
+      sceneLoader: (world: PhysicsWorld, nextSettings: PlaygroundSettings) => void,
+      worldSettings?: PlaygroundSettings,
+    ) => void;
+    loadCharacterDemo: () => void;
+  },
+): void {
+  if (sceneId.startsWith('benchmark:')) {
+    const scenarioId = sceneId.slice('benchmark:'.length) || benchmarkFallbackId;
+    const scenario = getBenchmarkScenarioById(scenarioId);
+
+    if (scenario) {
+      actions.recreateWorld((world) => scenario.setup(world), scenario.settings);
+    } else {
+      actions.recreateWorld(loadDefaultScene);
+    }
+
+    return;
+  }
+
+  switch (sceneId) {
+    case 'default':
+      actions.recreateWorld(loadDefaultScene);
+      break;
+    case 'empty':
+      actions.recreateWorld(loadEmptyScene);
+      break;
+    case 'walls':
+      actions.recreateWorld(loadWallsValidationScene);
+      break;
+    case 'capsule-endpoint':
+      actions.recreateWorld(loadCapsuleEndpointValidationScene);
+      break;
+    case 'bridge':
+      actions.recreateWorld(loadBridgeValidationScene);
+      break;
+    case 'character-demo':
+      actions.loadCharacterDemo();
+      break;
+    case 'layer':
+      actions.recreateWorld(loadLayerShowcaseScene);
+      break;
+    default:
+      actions.recreateWorld(loadDefaultScene);
   }
 }
 

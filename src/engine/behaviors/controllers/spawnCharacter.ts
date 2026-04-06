@@ -109,7 +109,7 @@ export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptio
     leftLegConstraintId: world.createConstraint({
       pointAId: lowerBody,
       pointBId: leftFoot,
-      stiffness,
+      stiffness: stiffness * 0.5,
       damping,
       tearThreshold,
       collisionRadius: 3 * scale,
@@ -117,10 +117,10 @@ export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptio
     rightLegConstraintId: world.createConstraint({
       pointAId: lowerBody,
       pointBId: rightFoot,
-      stiffness,
+      stiffness: stiffness * 0.5,
       damping,
       tearThreshold,
-      collisionRadius: 3 * scale,
+      collisionRadius: (3 * scale) + 0.02,
     }),
   };
 

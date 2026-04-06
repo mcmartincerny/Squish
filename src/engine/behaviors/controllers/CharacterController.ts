@@ -51,9 +51,12 @@ interface WeightedPoint {
 
 export class CharacterController implements WorldController {
   private world: PhysicsWorld;
-  private readonly rig: CharacterRig;
+  readonly rig: CharacterRig;
   private initialLeftLegLength: number;
   private initialRightLegLength: number;
+  private stanceFoot: "left" | "right" = "left";
+  private lastWalkDirection = 1;
+  private currentStepElapsedMs = 0;
   private input: CharacterControlInput = {
     left: false,
     right: false,
@@ -83,6 +86,16 @@ export class CharacterController implements WorldController {
 
   private lastTimeFeetWereOnGround = 0;
   private recentFeetOnGroundTimeout = 1000;
+  private WALK_STEP_MIN_TIME_MS = 0;
+  private WALK_STEP_MAX_TIME_MS = 300;
+  private WALK_SWING_LEG_LENGTH_MULTIPLIER = 0.7;
+  private WALK_STANCE_MAX_FORCE = 11000;
+  private WALK_SWING_MAX_FORCE = 7500;
+  private WALK_STANCE_BODY_ANGLE_OFFSET_DEG = 14;
+  private WALK_SWING_BODY_ANGLE_OFFSET_DEG = 14;
+  private WALK_SWING_REEXTEND_ANGLE_THRESHOLD_DEG = 14;
+  private WALK_FOOT_GROUNDED_DISTANCE = 2;
+  private WALK_SWITCH_X_OFFSET = 3;
 
   /**
    * World-driven update hook. For now it only resolves the rig body parts and exits
@@ -100,7 +113,7 @@ export class CharacterController implements WorldController {
 
     const rays = this.raycastBellow();
 
-    const feetOnGround = (rays.leftFoot?.distance ?? 99) < 1 || (rays.rightFoot?.distance ?? 99) < 1;
+    const feetOnGround = (rays.leftFoot?.distance ?? 99) < this.WALK_FOOT_GROUNDED_DISTANCE || (rays.rightFoot?.distance ?? 99) < this.WALK_FOOT_GROUNDED_DISTANCE;
     if (feetOnGround) {
       this.lastTimeFeetWereOnGround = performance.now();
     }
@@ -111,32 +124,120 @@ export class CharacterController implements WorldController {
       this.applyUprightCorrectionForce(upperChest, lowerBody, { maxForce: 10000, desiredAngleDeg: -90 });
       // Stabilize head with upperChest
       this.applyUprightCorrectionForce(head, upperChest, { maxForce: 3000, desiredAngleDeg: -90 });
-      // Keep left leg under lowerBody
-      this.applyUprightCorrectionForce(leftFoot, lowerBody, { maxForce: 10000, desiredAngleDeg: 100 });
-      // Keep right leg under lowerBody
-      this.applyUprightCorrectionForce(rightFoot, lowerBody, { maxForce: 10000, desiredAngleDeg: 80 });
+      if (!this.input.left && !this.input.right) {
+        // Keep left leg under lowerBody
+        this.applyUprightCorrectionForce(lowerBody, leftFoot, { maxForce: 10000, desiredAngleDeg: -80 });
+        // Keep right leg under lowerBody
+        this.applyUprightCorrectionForce(lowerBody, rightFoot, { maxForce: 10000, desiredAngleDeg: -100 });
+      }
 
-      this.handleJump(deltaTime);
+      // this.handleJump(deltaTime);
+      this.handleWalking(deltaTime, rays, lowerBody, leftFoot, rightFoot);
+    }
+  }
+
+  handleWalking(deltaTime: number, rays: RaycastBellowResult, lowerBody: PointSnapshot, leftFoot: PointSnapshot, rightFoot: PointSnapshot): void {
+    const moveDirection = Number(this.input.right) - Number(this.input.left);
+
+    if (Math.abs(moveDirection) < EPSILON) {
+      this.currentStepElapsedMs = 0;
+      this.restoreWalkLegLengths(deltaTime);
+      return;
+    }
+
+    const direction = Math.sign(moveDirection) || this.lastWalkDirection;
+    const leftGrounded = (rays.leftFoot?.distance ?? Number.POSITIVE_INFINITY) <= this.WALK_FOOT_GROUNDED_DISTANCE;
+    const rightGrounded = (rays.rightFoot?.distance ?? Number.POSITIVE_INFINITY) <= this.WALK_FOOT_GROUNDED_DISTANCE;
+
+    if (direction !== this.lastWalkDirection) {
+      this.lastWalkDirection = direction;
+      this.currentStepElapsedMs = 0;
+      this.stanceFoot = direction > 0 ? "left" : "right";
+    }
+
+    if (!leftGrounded && rightGrounded) {
+      this.stanceFoot = "right";
+      this.currentStepElapsedMs = 0;
+    } else if (!rightGrounded && leftGrounded) {
+      this.stanceFoot = "left";
+      this.currentStepElapsedMs = 0;
+    }
+
+    this.currentStepElapsedMs += deltaTime * 1000;
+
+    const stanceFootPoint = this.stanceFoot === "left" ? leftFoot : rightFoot;
+    const swingFootPoint = this.stanceFoot === "left" ? rightFoot : leftFoot;
+    const stanceRay = this.stanceFoot === "left" ? rays.leftFoot : rays.rightFoot;
+    const swingRay = this.stanceFoot === "left" ? rays.rightFoot : rays.leftFoot;
+    const stanceConstraintId = this.stanceFoot === "left" ? this.rig.leftLegConstraintId : this.rig.rightLegConstraintId;
+    const swingConstraintId = this.stanceFoot === "left" ? this.rig.rightLegConstraintId : this.rig.leftLegConstraintId;
+    const stanceInitialLength = this.stanceFoot === "left" ? this.initialLeftLegLength : this.initialRightLegLength;
+    const swingInitialLength = this.stanceFoot === "left" ? this.initialRightLegLength : this.initialLeftLegLength;
+
+    const stanceAngle = direction > 0 ? -90 + this.WALK_STANCE_BODY_ANGLE_OFFSET_DEG : -90 - this.WALK_STANCE_BODY_ANGLE_OFFSET_DEG;
+    const swingAngle = direction > 0 ? -90 - this.WALK_SWING_BODY_ANGLE_OFFSET_DEG : -90 + this.WALK_SWING_BODY_ANGLE_OFFSET_DEG;
+    const currentSwingAngleDeg =
+      Math.atan2(lowerBody.position.y - swingFootPoint.position.y, lowerBody.position.x - swingFootPoint.position.x) / DEG2RAD;
+
+    this.applyUprightCorrectionForce(lowerBody, stanceFootPoint, {
+      maxForce: this.WALK_STANCE_MAX_FORCE,
+      desiredAngleDeg: stanceAngle,
+      proportionalGain: 1.05,
+      dampingGain: 3,
+    });
+    this.applyUprightCorrectionForce(lowerBody, swingFootPoint, {
+      maxForce: this.WALK_SWING_MAX_FORCE,
+      desiredAngleDeg: swingAngle,
+      proportionalGain: 0.9,
+      dampingGain: 1.15,
+    });
+
+    const swingAheadOfBody =
+      direction > 0
+        ? swingFootPoint.position.x >= lowerBody.position.x + this.WALK_SWITCH_X_OFFSET
+        : swingFootPoint.position.x <= lowerBody.position.x - this.WALK_SWITCH_X_OFFSET;
+
+    const swingCloseToForwardAngle =
+      Math.abs(normalizeAngle((swingAngle - currentSwingAngleDeg) * DEG2RAD)) <= this.WALK_SWING_REEXTEND_ANGLE_THRESHOLD_DEG * DEG2RAD;
+
+    const swingTargetLength = swingAheadOfBody && swingCloseToForwardAngle
+      ? swingInitialLength
+      : swingInitialLength * this.WALK_SWING_LEG_LENGTH_MULTIPLIER;
+
+    this.slowlyChangeConstraintLength(
+      swingConstraintId,
+      swingTargetLength,
+      200,
+      deltaTime,
+    );
+    this.slowlyChangeConstraintLength(stanceConstraintId, stanceInitialLength, 200, deltaTime);
+
+    const swingGrounded = (swingRay?.distance ?? Number.POSITIVE_INFINITY) <= this.WALK_FOOT_GROUNDED_DISTANCE;
+    const timedOut = this.currentStepElapsedMs >= this.WALK_STEP_MAX_TIME_MS;
+    const readyToSwitch = this.currentStepElapsedMs >= this.WALK_STEP_MIN_TIME_MS && swingGrounded && swingAheadOfBody;
+    const stanceLostGround = (stanceRay?.distance ?? Number.POSITIVE_INFINITY) > this.WALK_FOOT_GROUNDED_DISTANCE && swingGrounded;
+
+    if (readyToSwitch || timedOut || stanceLostGround) {
+      this.stanceFoot = this.stanceFoot === "left" ? "right" : "left";
+      console.log("stanceFoot", this.stanceFoot);
+      this.currentStepElapsedMs = 0;
     }
   }
 
   // How shorter are legs when fully prepared for jump
   private LEG_SHORTEN_DISTANCE_MULTIPLIER = 0.5;
-  private MS_TO_FULLY_SHORTEN = 500;
   handleJump(deltaTime: number): void {
     if (this.input.jump) {
       this.slowlyChangeConstraintLength(
         this.rig.leftLegConstraintId,
-        this.LEG_SHORTEN_DISTANCE_MULTIPLIER,
-        this.MS_TO_FULLY_SHORTEN,
-        this.initialLeftLegLength,
+        this.initialLeftLegLength * this.LEG_SHORTEN_DISTANCE_MULTIPLIER,
+        110,
         deltaTime,
       );
       this.slowlyChangeConstraintLength(
         this.rig.rightLegConstraintId,
-        this.LEG_SHORTEN_DISTANCE_MULTIPLIER,
-        this.MS_TO_FULLY_SHORTEN,
-        this.initialRightLegLength,
+        this.initialRightLegLength * this.LEG_SHORTEN_DISTANCE_MULTIPLIER,
+        110,
         deltaTime,
       );
     } else {
@@ -150,31 +251,36 @@ export class CharacterController implements WorldController {
       });
     }
   }
-  
+
   /**
-   * Moves a constraint's rest length toward `initialLength * finalLengthMultiplier`
-   * at a constant rate so the transition completes in `timeToChange` ms from rest length.
+   * Moves a constraint rest length toward an absolute target length at a fixed speed.
    */
   private slowlyChangeConstraintLength(
     constraintId: ConstraintId,
-    finalLengthMultiplier: number,
-    timeToChange: number,
-    initialLength: number,
+    finalLength: number,
+    lengthPerSecond = 50,
     deltaTime: number,
   ): void {
     const constraint = this.world.getConstraint(constraintId)!;
     const currentLength = constraint.restLength;
-    const targetLength = initialLength * finalLengthMultiplier;
-    const shortenPerMs = (initialLength - targetLength) / timeToChange;
-    const shortenAmount = shortenPerMs * deltaTime * 1000;
-    let nextLength = currentLength - shortenAmount;
-    if (nextLength < targetLength) {
-      nextLength = targetLength;
+    const targetLength = finalLength;
+
+    if (Math.abs(targetLength - currentLength) <= EPSILON) {
+      return;
     }
+
+    const maxStep = lengthPerSecond * deltaTime;
+    const nextLength = moveTowards(currentLength, targetLength, maxStep);
+
     this.world.setConstraintRestLength({
       constraintId,
       length: nextLength,
     });
+  }
+
+  private restoreWalkLegLengths(deltaTime: number): void {
+    this.slowlyChangeConstraintLength(this.rig.leftLegConstraintId, this.initialLeftLegLength, 200, deltaTime);
+    this.slowlyChangeConstraintLength(this.rig.rightLegConstraintId, this.initialRightLegLength, 200, deltaTime);
   }
 
   /**
@@ -438,6 +544,14 @@ function normalizeAngle(angle: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function moveTowards(current: number, target: number, maxDelta: number): number {
+  if (Math.abs(target - current) <= maxDelta) {
+    return target;
+  }
+
+  return current + Math.sign(target - current) * maxDelta;
 }
 
 /**

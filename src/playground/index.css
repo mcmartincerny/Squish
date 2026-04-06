@@ -134,6 +134,21 @@ input {
   background: linear-gradient(180deg, #31406a, #202a42);
 }
 
+.toolbar__button--scene-active {
+  border-color: rgba(122, 162, 255, 0.65);
+  background: linear-gradient(180deg, #293557, #1a2130);
+  box-shadow: 0 0 0 1px rgba(122, 162, 255, 0.22);
+}
+
+.toolbar__button--scene-active:hover {
+  border-color: rgba(138, 178, 255, 0.75);
+}
+
+.toolbar__select.toolbar__select--active {
+  border-color: rgba(122, 162, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(122, 162, 255, 0.18);
+}
+
 .controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -287,6 +302,11 @@ input {
 .mode-button--active {
   background: linear-gradient(180deg, #293557, #1a2130);
   border-color: rgba(122, 162, 255, 0.55);
+}
+
+.mode-button--previous {
+  outline: 1px dashed rgba(122, 162, 255, 0.4);
+  outline-offset: 2px;
 }
 
 .panel-note {
