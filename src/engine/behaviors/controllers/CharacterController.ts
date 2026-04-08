@@ -91,9 +91,12 @@ export class CharacterController implements WorldController {
   private WALK_SWING_LEG_LENGTH_MULTIPLIER = 0.7;
   private WALK_STANCE_MAX_FORCE = 11000;
   private WALK_SWING_MAX_FORCE = 7500;
-  private WALK_STANCE_BODY_ANGLE_OFFSET_DEG = 14;
-  private WALK_SWING_BODY_ANGLE_OFFSET_DEG = 14;
-  private WALK_SWING_REEXTEND_ANGLE_THRESHOLD_DEG = 14;
+  private WALK_STANCE_BODY_ANGLE_OFFSET_DEG = 14;  // 6 is weirdly stable
+  private WALK_SWING_BODY_ANGLE_OFFSET_DEG = 14;  // 6 is weirdly stable
+  private WALK_SWING_REEXTEND_ANGLE_THRESHOLD_DEG = 10;
+  private WALK_LEG_CHANGE_LENGTH_PER_SECOND = 200;
+  private JUMP_LEG_LENGTH_MULTIPLIER = 1.5;
+  private JUMP_LEG_CHANGE_LENGTH_PER_SECOND = 5000;
   private WALK_FOOT_GROUNDED_DISTANCE = 2;
   private WALK_SWITCH_X_OFFSET = 3;
 
@@ -113,7 +116,8 @@ export class CharacterController implements WorldController {
 
     const rays = this.raycastBellow();
 
-    const feetOnGround = (rays.leftFoot?.distance ?? 99) < this.WALK_FOOT_GROUNDED_DISTANCE || (rays.rightFoot?.distance ?? 99) < this.WALK_FOOT_GROUNDED_DISTANCE;
+    const feetOnGround =
+      (rays.leftFoot?.distance ?? 99) < this.WALK_FOOT_GROUNDED_DISTANCE || (rays.rightFoot?.distance ?? 99) < this.WALK_FOOT_GROUNDED_DISTANCE;
     if (feetOnGround) {
       this.lastTimeFeetWereOnGround = performance.now();
     }
@@ -131,7 +135,6 @@ export class CharacterController implements WorldController {
         this.applyUprightCorrectionForce(lowerBody, rightFoot, { maxForce: 10000, desiredAngleDeg: -100 });
       }
 
-      // this.handleJump(deltaTime);
       this.handleWalking(deltaTime, rays, lowerBody, leftFoot, rightFoot);
     }
   }
@@ -139,7 +142,7 @@ export class CharacterController implements WorldController {
   handleWalking(deltaTime: number, rays: RaycastBellowResult, lowerBody: PointSnapshot, leftFoot: PointSnapshot, rightFoot: PointSnapshot): void {
     const moveDirection = Number(this.input.right) - Number(this.input.left);
 
-    if (Math.abs(moveDirection) < EPSILON) {
+    if (Math.abs(moveDirection) < EPSILON && !this.input.jump) {
       this.currentStepElapsedMs = 0;
       this.restoreWalkLegLengths(deltaTime);
       return;
@@ -176,8 +179,7 @@ export class CharacterController implements WorldController {
 
     const stanceAngle = direction > 0 ? -90 + this.WALK_STANCE_BODY_ANGLE_OFFSET_DEG : -90 - this.WALK_STANCE_BODY_ANGLE_OFFSET_DEG;
     const swingAngle = direction > 0 ? -90 - this.WALK_SWING_BODY_ANGLE_OFFSET_DEG : -90 + this.WALK_SWING_BODY_ANGLE_OFFSET_DEG;
-    const currentSwingAngleDeg =
-      Math.atan2(lowerBody.position.y - swingFootPoint.position.y, lowerBody.position.x - swingFootPoint.position.x) / DEG2RAD;
+    const currentSwingAngleDeg = Math.atan2(lowerBody.position.y - swingFootPoint.position.y, lowerBody.position.x - swingFootPoint.position.x) / DEG2RAD;
 
     this.applyUprightCorrectionForce(lowerBody, stanceFootPoint, {
       maxForce: this.WALK_STANCE_MAX_FORCE,
@@ -200,17 +202,15 @@ export class CharacterController implements WorldController {
     const swingCloseToForwardAngle =
       Math.abs(normalizeAngle((swingAngle - currentSwingAngleDeg) * DEG2RAD)) <= this.WALK_SWING_REEXTEND_ANGLE_THRESHOLD_DEG * DEG2RAD;
 
-    const swingTargetLength = swingAheadOfBody && swingCloseToForwardAngle
-      ? swingInitialLength
-      : swingInitialLength * this.WALK_SWING_LEG_LENGTH_MULTIPLIER;
+    const swingTargetLength = swingAheadOfBody && swingCloseToForwardAngle ? swingInitialLength : swingInitialLength * this.WALK_SWING_LEG_LENGTH_MULTIPLIER;
 
-    this.slowlyChangeConstraintLength(
-      swingConstraintId,
-      swingTargetLength,
-      200,
-      deltaTime,
-    );
-    this.slowlyChangeConstraintLength(stanceConstraintId, stanceInitialLength, 200, deltaTime);
+    if (this.input.jump) {
+      this.slowlyChangeConstraintLength(swingConstraintId, this.initialRightLegLength * this.JUMP_LEG_LENGTH_MULTIPLIER, this.JUMP_LEG_CHANGE_LENGTH_PER_SECOND, deltaTime);
+      this.slowlyChangeConstraintLength(stanceConstraintId, this.initialLeftLegLength * this.JUMP_LEG_LENGTH_MULTIPLIER, this.JUMP_LEG_CHANGE_LENGTH_PER_SECOND, deltaTime);
+    } else {
+      this.slowlyChangeConstraintLength(swingConstraintId, swingTargetLength, this.WALK_LEG_CHANGE_LENGTH_PER_SECOND, deltaTime);
+      this.slowlyChangeConstraintLength(stanceConstraintId, stanceInitialLength, this.WALK_LEG_CHANGE_LENGTH_PER_SECOND, deltaTime);
+    }
 
     const swingGrounded = (swingRay?.distance ?? Number.POSITIVE_INFINITY) <= this.WALK_FOOT_GROUNDED_DISTANCE;
     const timedOut = this.currentStepElapsedMs >= this.WALK_STEP_MAX_TIME_MS;
@@ -224,43 +224,10 @@ export class CharacterController implements WorldController {
     }
   }
 
-  // How shorter are legs when fully prepared for jump
-  private LEG_SHORTEN_DISTANCE_MULTIPLIER = 0.5;
-  handleJump(deltaTime: number): void {
-    if (this.input.jump) {
-      this.slowlyChangeConstraintLength(
-        this.rig.leftLegConstraintId,
-        this.initialLeftLegLength * this.LEG_SHORTEN_DISTANCE_MULTIPLIER,
-        110,
-        deltaTime,
-      );
-      this.slowlyChangeConstraintLength(
-        this.rig.rightLegConstraintId,
-        this.initialRightLegLength * this.LEG_SHORTEN_DISTANCE_MULTIPLIER,
-        110,
-        deltaTime,
-      );
-    } else {
-      this.world.setConstraintRestLength({
-        constraintId: this.rig.leftLegConstraintId,
-        length: this.initialLeftLegLength,
-      });
-      this.world.setConstraintRestLength({
-        constraintId: this.rig.rightLegConstraintId,
-        length: this.initialRightLegLength,
-      });
-    }
-  }
-
   /**
    * Moves a constraint rest length toward an absolute target length at a fixed speed.
    */
-  private slowlyChangeConstraintLength(
-    constraintId: ConstraintId,
-    finalLength: number,
-    lengthPerSecond = 50,
-    deltaTime: number,
-  ): void {
+  private slowlyChangeConstraintLength(constraintId: ConstraintId, finalLength: number, lengthPerSecond = 50, deltaTime: number): void {
     const constraint = this.world.getConstraint(constraintId)!;
     const currentLength = constraint.restLength;
     const targetLength = finalLength;
