@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { BenchmarkChartsView } from './BenchmarkChartsView.tsx';
 import { BenchmarkRunner } from './BenchmarkRunner.tsx';
 import { PlaygroundView } from './PlaygroundView.tsx';
+import { TrainingView } from './training/TrainingView.tsx';
 
-type AppMode = 'playground' | 'benchmark' | 'benchmark-charts';
+type AppMode = 'playground' | 'benchmark' | 'benchmark-charts' | 'training';
 
 function App() {
   const [mode, setMode] = useState<AppMode>('playground');
@@ -34,7 +35,17 @@ function App() {
     return <BenchmarkChartsView onBackToBenchmarkRunner={() => setMode('benchmark')} />;
   }
 
-  return <PlaygroundView key={hmrKey} onOpenBenchmarkRunner={() => setMode('benchmark')} />;
+  if (mode === 'training') {
+    return <TrainingView onBackToPlayground={() => setMode('playground')} />;
+  }
+
+  return (
+    <PlaygroundView
+      key={hmrKey}
+      onOpenBenchmarkRunner={() => setMode('benchmark')}
+      onOpenTrainingMode={() => setMode('training')}
+    />
+  );
 }
 
 export default App;

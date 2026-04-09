@@ -1,5 +1,5 @@
 import type { LayerId, PhysicsWorld, Vec2Like } from "../../index.ts";
-import { CharacterController, type CharacterRig } from "./CharacterController.ts";
+import { CharacterController, type CharacterConstantsOverride, type CharacterRig } from "./CharacterController.ts";
 
 export interface SpawnCharacterOptions {
   position: Vec2Like;
@@ -8,6 +8,7 @@ export interface SpawnCharacterOptions {
   stiffness?: number;
   damping?: number;
   tearThreshold?: number | null;
+  characterConstants?: CharacterConstantsOverride;
 }
 
 export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptions): CharacterController {
@@ -135,5 +136,5 @@ export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptio
   }
 
 
-  return new CharacterController(world, rig);
+  return new CharacterController(world, rig, options.characterConstants);
 }

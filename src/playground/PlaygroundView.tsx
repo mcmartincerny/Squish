@@ -89,9 +89,10 @@ type PlayerInputState = CharacterControlInput;
 
 interface PlaygroundViewProps {
   onOpenBenchmarkRunner: () => void;
+  onOpenTrainingMode: () => void;
 }
 
-export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
+export function PlaygroundView({ onOpenBenchmarkRunner, onOpenTrainingMode }: PlaygroundViewProps) {
   const persistedRef = useRef(loadPersisted());
   const p0 = persistedRef.current;
 
@@ -410,19 +411,19 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
   const loadCharacterDemo = useCallback(() => {
     recreateWorld((world, worldSettings) => {
       loadCharacterDemoScene(world, worldSettings);
-      const playerScale = worldSettings.playerSize;
-      const controller = spawnCharacter(world, {
-        position: {
-          x: worldSettings.worldWidth * 0.24,
-          y: worldSettings.worldHeight * 0.58,
-        },
-        scale: playerScale,
-        stiffness: Math.max(worldSettings.constraintStiffness * 5, 0.18),
-        damping: Math.max(worldSettings.constraintDamping, 8),
-        tearThreshold: null,
-      });
-      controller.setInput(playerInputRef.current);
-      characterControllerRef.current = controller;
+      // const playerScale = worldSettings.playerSize;
+      // const controller = spawnCharacter(world, {
+      //   position: {
+      //     x: worldSettings.worldWidth * 0.24,
+      //     y: worldSettings.worldHeight * 0.58,
+      //   },
+      //   scale: playerScale,
+      //   stiffness: Math.max(worldSettings.constraintStiffness * 5, 0.18),
+      //   damping: Math.max(worldSettings.constraintDamping, 8),
+      //   tearThreshold: null,
+      // });
+      // controller.setInput(playerInputRef.current);
+      // characterControllerRef.current = controller;
     });
   }, [recreateWorld]);
 
@@ -820,6 +821,9 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
           <button className="toolbar__button toolbar__button--accent" onClick={onOpenBenchmarkRunner}>
             Benchmark Runner
           </button>
+          <button className="toolbar__button toolbar__button--accent" onClick={onOpenTrainingMode}>
+            Training
+          </button>
         </div>
 
         <div className="toolbar__group">
@@ -1085,6 +1089,7 @@ export function PlaygroundView({ onOpenBenchmarkRunner }: PlaygroundViewProps) {
             onPointerLeave={handlePointerLeave}
             onCanvasSizeChange={handleCanvasSizeChange}
             getOverlayState={getOverlayState}
+            // ultraSpeed={true}
           />
         </main>
       </section>

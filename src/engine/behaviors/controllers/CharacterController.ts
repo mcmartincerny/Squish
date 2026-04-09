@@ -49,6 +49,17 @@ interface WeightedPoint {
   weight: number;
 }
 
+export interface CharacterConstantsOverride {
+  WALK_SWING_LEG_LENGTH_MULTIPLIER?: number;
+  WALK_STANCE_MAX_FORCE?: number;
+  WALK_SWING_MAX_FORCE?: number;
+  WALK_STANCE_BODY_ANGLE_OFFSET_DEG?: number;
+  WALK_SWING_BODY_ANGLE_OFFSET_DEG?: number;
+  WALK_SWING_REEXTEND_ANGLE_THRESHOLD_DEG?: number;
+  WALK_LEG_CHANGE_LENGTH_PER_SECOND?: number;
+  WALK_SWITCH_X_OFFSET?: number;
+}
+
 export class CharacterController implements WorldController {
   private world: PhysicsWorld;
   readonly rig: CharacterRig;
@@ -66,12 +77,22 @@ export class CharacterController implements WorldController {
     aimTarget: null,
   };
 
-  constructor(world: PhysicsWorld, rig: CharacterRig) {
+  constructor(world: PhysicsWorld, rig: CharacterRig, characterConstants?: CharacterConstantsOverride) {
     this.world = world;
     this.rig = rig;
     this.world.registerController(this);
     this.initialLeftLegLength = this.world.getConstraint(this.rig.leftLegConstraintId)!.restLength;
     this.initialRightLegLength = this.world.getConstraint(this.rig.rightLegConstraintId)!.restLength;
+
+    // Override default constants with any provided overrides
+    this.WALK_SWING_LEG_LENGTH_MULTIPLIER = characterConstants?.WALK_SWING_LEG_LENGTH_MULTIPLIER ?? this.WALK_SWING_LEG_LENGTH_MULTIPLIER;
+    this.WALK_STANCE_MAX_FORCE = characterConstants?.WALK_STANCE_MAX_FORCE ?? this.WALK_STANCE_MAX_FORCE;
+    this.WALK_SWING_MAX_FORCE = characterConstants?.WALK_SWING_MAX_FORCE ?? this.WALK_SWING_MAX_FORCE;
+    this.WALK_STANCE_BODY_ANGLE_OFFSET_DEG = characterConstants?.WALK_STANCE_BODY_ANGLE_OFFSET_DEG ?? this.WALK_STANCE_BODY_ANGLE_OFFSET_DEG;
+    this.WALK_SWING_BODY_ANGLE_OFFSET_DEG = characterConstants?.WALK_SWING_BODY_ANGLE_OFFSET_DEG ?? this.WALK_SWING_BODY_ANGLE_OFFSET_DEG;
+    this.WALK_SWING_REEXTEND_ANGLE_THRESHOLD_DEG = characterConstants?.WALK_SWING_REEXTEND_ANGLE_THRESHOLD_DEG ?? this.WALK_SWING_REEXTEND_ANGLE_THRESHOLD_DEG;
+    this.WALK_LEG_CHANGE_LENGTH_PER_SECOND = characterConstants?.WALK_LEG_CHANGE_LENGTH_PER_SECOND ?? this.WALK_LEG_CHANGE_LENGTH_PER_SECOND;
+    this.WALK_SWITCH_X_OFFSET = characterConstants?.WALK_SWITCH_X_OFFSET ?? this.WALK_SWITCH_X_OFFSET;
   }
 
   /**
@@ -100,19 +121,26 @@ export class CharacterController implements WorldController {
   private WALK_FOOT_GROUNDED_DISTANCE = 2;
   private WALK_SWITCH_X_OFFSET = 3;
 
+  updateNumber = 0;
+  lowerBodyXOscillations = 0;
+  lowerBodyYOscillations = 0;
+
   /**
    * World-driven update hook. For now it only resolves the rig body parts and exits
    * early if the spawned character is incomplete.
    */
   update(deltaTime: number): void {
-    void deltaTime;
-    void this.input;
-
+    
     const { head, upperChest, lowerBody, leftHand, rightHand, leftFoot, rightFoot } = this.getBodyParts();
-
+    
     if (!head || !upperChest || !lowerBody || !leftHand || !rightHand || !leftFoot || !rightFoot) {
       return;
     }
+
+    this.updateNumber++;
+
+    this.lowerBodyXOscillations += Math.abs(lowerBody.position.x - lowerBody.previousPosition.x);
+    this.lowerBodyYOscillations += Math.abs(lowerBody.position.y - lowerBody.previousPosition.y);
 
     const rays = this.raycastBellow();
 
@@ -125,9 +153,13 @@ export class CharacterController implements WorldController {
 
     if (!this.input.down && feetRecentlyOnGround) {
       // Stabilize lowerBody with upperChest
-      this.applyUprightCorrectionForce(upperChest, lowerBody, { maxForce: 10000, desiredAngleDeg: -90 });
+      this.applyUprightCorrectionForce(upperChest, lowerBody, { maxForce: 15000, desiredAngleDeg: -90 });
       // Stabilize head with upperChest
-      this.applyUprightCorrectionForce(head, upperChest, { maxForce: 3000, desiredAngleDeg: -90 });
+      this.applyUprightCorrectionForce(head, upperChest, { maxForce: 5000, desiredAngleDeg: -90, dampingGain: 3 });
+      // Stabilize left hand with upperChest
+      this.applyUprightCorrectionForce(upperChest, leftHand, { maxForce: 1000, desiredAngleDeg: 170, dampingGain: 3 });
+      // Stabilize right hand with upperChest
+      this.applyUprightCorrectionForce(upperChest, rightHand, { maxForce: 1000, desiredAngleDeg: 190, dampingGain: 3 });
       if (!this.input.left && !this.input.right) {
         // Keep left leg under lowerBody
         this.applyUprightCorrectionForce(lowerBody, leftFoot, { maxForce: 10000, desiredAngleDeg: -80 });
@@ -219,7 +251,6 @@ export class CharacterController implements WorldController {
 
     if (readyToSwitch || timedOut || stanceLostGround) {
       this.stanceFoot = this.stanceFoot === "left" ? "right" : "left";
-      console.log("stanceFoot", this.stanceFoot);
       this.currentStepElapsedMs = 0;
     }
   }

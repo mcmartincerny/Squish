@@ -37,6 +37,7 @@ interface SimulationCanvasProps {
     previewPoint: { x: number; y: number; radius: number; pinned: boolean } | null;
     gridSpacing: number | null;
   };
+  ultraSpeed?: boolean;
 }
 
 export function SimulationCanvas({
@@ -56,6 +57,7 @@ export function SimulationCanvas({
   onPointerLeave,
   onCanvasSizeChange,
   getOverlayState,
+  ultraSpeed = false,
 }: SimulationCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraRef = useRef(camera);
@@ -77,6 +79,7 @@ export function SimulationCanvas({
   });
   const accumulatorRef = useRef(0);
   const lastFrameTimeRef = useRef<number | null>(null);
+  const ultraSpeedRef = useRef(ultraSpeed);
 
   useEffect(() => {
     cameraRef.current = camera;
@@ -127,6 +130,11 @@ export function SimulationCanvas({
   }, [getOverlayState]);
 
   useEffect(() => {
+    ultraSpeedRef.current = ultraSpeed;
+    accumulatorRef.current = 0;
+  }, [ultraSpeed]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
 
     if (!canvas) {
@@ -166,8 +174,8 @@ export function SimulationCanvas({
 
       if (!pausedRef.current) {
         accumulatorRef.current += elapsedSeconds;
-
-        while (accumulatorRef.current >= FIXED_DELTA_TIME) {
+        const beforeStepping = performance.now();
+        while (accumulatorRef.current >= FIXED_DELTA_TIME || (ultraSpeedRef.current && (performance.now() - beforeStepping) < 16.666) ) {
           onBeforeStepRef.current?.(currentWorld, FIXED_DELTA_TIME);
 
           const stepStart = performance.now();

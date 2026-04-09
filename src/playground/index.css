@@ -467,6 +467,59 @@ input {
   color: var(--muted);
 }
 
+.training-sidebar {
+  grid-template-rows: auto auto auto;
+  align-content: start;
+}
+
+.training-sidebar__controls {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.training-controls {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.training-main {
+  grid-template-rows: minmax(260px, 40vh) minmax(0, 1fr);
+}
+
+.training-results-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr) minmax(320px, 1fr);
+  gap: 0.45rem;
+}
+
+.training-summary {
+  gap: 0.45rem;
+}
+
+.training-summary__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.3rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.training-chart {
+  min-height: 320px;
+}
+
+.training-chart__empty {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
 .charts-shell {
   height: 100vh;
   display: grid;
@@ -873,6 +926,10 @@ input {
 
   .runner-main {
     grid-template-rows: minmax(240px, 36vh) minmax(0, 1fr);
+  }
+
+  .training-results-grid {
+    grid-template-columns: 1fr;
   }
 
   .charts-body,

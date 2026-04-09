@@ -1,3 +1,4 @@
+import { spawnCharacter } from "../engine/behaviors/index.ts";
 import type { LayerId, PhysicsWorld, PointId } from "../engine/index.ts";
 import type { PlaygroundSettings } from "./types.ts";
 
@@ -296,18 +297,39 @@ export function loadBridgeValidationScene(world: PhysicsWorld, settings: Playgro
 
 export function loadCharacterDemoScene(world: PhysicsWorld, settings: PlaygroundSettings): void {
   world.clear();
+  settings.worldWidth = 6500
   syncWorldConfig(world, settings);
 
-  createPinnedColliderSegment(world, settings, settings.worldWidth * 0.18, settings.worldHeight * 0.72, settings.worldWidth * 0.46, settings.worldHeight * 0.72);
-  createPinnedColliderSegment(world, settings, settings.worldWidth * 0.58, settings.worldHeight * 0.62, settings.worldWidth * 0.8, settings.worldHeight * 0.62);
-  createPinnedColliderSegment(world, settings, settings.worldWidth * 0.62, settings.worldHeight * 0.48, settings.worldWidth * 0.76, settings.worldHeight * 0.4);
+  createPinnedConnectedPoints(world, settings, createStairPoints(6, 1000, -25, 200, 900));
 
-  spawnSquare({
-    world,
-    settings,
-    centerX: settings.worldWidth * 0.68,
-    centerY: settings.worldHeight * 0.18,
+  const controller = spawnCharacter(world, {
+    position: {
+      x: 300,
+      y: 750,
+    },
+    scale: 1.9,
+    stiffness: 0.15,
+    damping: 1.5,
+    tearThreshold: null,
   });
+  controller.setInput({
+    left: false,
+    right: true,
+    up: false,
+    down: false,
+    jump: false,
+    aimTarget: null,
+  });
+}
+
+const createStairPoints = (steps: number, stepWidth: number, stepHeightIncrement: number, startX: number, startY: number): { x: number; y: number }[] => {
+  const points: { x: number; y: number }[] = [];
+  for (let i = 0; i < steps; i++) {
+    const y = startY + i * stepHeightIncrement * (i + 1) / 2;
+    points.push({ x: startX + i * stepWidth, y });
+    points.push({ x: startX + (i + 1) * stepWidth, y });
+  }
+  return points;
 }
 
 export function loadLayerShowcaseScene(world: PhysicsWorld, settings: PlaygroundSettings): void {
@@ -430,31 +452,16 @@ function connectLoop(world: PhysicsWorld, pointIds: PointId[], settings: Playgro
   }
 }
 
-function createPinnedColliderSegment(
-  world: PhysicsWorld,
-  settings: PlaygroundSettings,
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-): void {
-  const startPointId = world.createPoint({
-    position: { x: startX, y: startY },
-    pinned: true,
-    radius: settings.pointRadius,
-  });
-  const endPointId = world.createPoint({
-    position: { x: endX, y: endY },
-    pinned: true,
-    radius: settings.pointRadius,
+function createPinnedConnectedPoints(world: PhysicsWorld, settings: PlaygroundSettings, points: { x: number; y: number }[], layers?: LayerId[]): void {
+  const pinnedPoints = points.map((point) => {
+    return createPoint(world, settings, point.x, point.y, {
+      pinned: true,
+      layers,
+    });
   });
 
-  world.createConstraint({
-    pointAId: startPointId,
-    pointBId: endPointId,
-    stiffness: 1,
-    damping: Math.max(settings.constraintDamping, 6),
-    tearThreshold: null,
-    collisionRadius: settings.colliderRadius * 1.35,
-  });
+  for (let i = 0; i < pinnedPoints.length - 1; i++) {
+    connect(world, pinnedPoints[i], pinnedPoints[(i + 1)], settings);
+  }
 }
+
