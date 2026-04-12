@@ -60,6 +60,14 @@ export interface CharacterConstantsOverride {
   WALK_SWITCH_X_OFFSET?: number;
 }
 
+export interface LearnedCharacterAction {
+  leftLegAngleOffsetDeg: number;
+  rightLegAngleOffsetDeg: number;
+  leftLegLengthMultiplier: number;
+  rightLegLengthMultiplier: number;
+  torsoLeanOffsetDeg: number;
+}
+
 export class CharacterController implements WorldController {
   private world: PhysicsWorld;
   readonly rig: CharacterRig;
@@ -68,6 +76,7 @@ export class CharacterController implements WorldController {
   private stanceFoot: "left" | "right" = "left";
   private lastWalkDirection = 1;
   private currentStepElapsedMs = 0;
+  private learnedAction: LearnedCharacterAction | null = null;
   private input: CharacterControlInput = {
     left: false,
     right: false,
@@ -103,6 +112,10 @@ export class CharacterController implements WorldController {
       ...input,
       aimTarget: input.aimTarget ? { ...input.aimTarget } : null,
     };
+  }
+
+  setLearnedAction(action: LearnedCharacterAction | null): void {
+    this.learnedAction = action ? { ...action } : null;
   }
 
   private lastTimeFeetWereOnGround = 0;
@@ -165,6 +178,11 @@ export class CharacterController implements WorldController {
         this.applyUprightCorrectionForce(lowerBody, leftFoot, { maxForce: 10000, desiredAngleDeg: -80 });
         // Keep right leg under lowerBody
         this.applyUprightCorrectionForce(lowerBody, rightFoot, { maxForce: 10000, desiredAngleDeg: -100 });
+      }
+
+      if (this.learnedAction) {
+        this.handleLearnedWalking(deltaTime, lowerBody, leftFoot, rightFoot);
+        return;
       }
 
       this.handleWalking(deltaTime, rays, lowerBody, leftFoot, rightFoot);
@@ -279,6 +297,55 @@ export class CharacterController implements WorldController {
   private restoreWalkLegLengths(deltaTime: number): void {
     this.slowlyChangeConstraintLength(this.rig.leftLegConstraintId, this.initialLeftLegLength, 200, deltaTime);
     this.slowlyChangeConstraintLength(this.rig.rightLegConstraintId, this.initialRightLegLength, 200, deltaTime);
+  }
+
+  getInitialLegLengths(): { left: number; right: number } {
+    return {
+      left: this.initialLeftLegLength,
+      right: this.initialRightLegLength,
+    };
+  }
+
+  private handleLearnedWalking(
+    deltaTime: number,
+    lowerBody: PointSnapshot,
+    leftFoot: PointSnapshot,
+    rightFoot: PointSnapshot,
+  ): void {
+    const action = this.learnedAction;
+
+    if (!action) {
+      return;
+    }
+
+    const leftAngle = clamp(-90 + action.torsoLeanOffsetDeg + action.leftLegAngleOffsetDeg, -175, -5);
+    const rightAngle = clamp(-90 + action.torsoLeanOffsetDeg + action.rightLegAngleOffsetDeg, -175, -5);
+
+    this.applyUprightCorrectionForce(lowerBody, leftFoot, {
+      maxForce: this.WALK_STANCE_MAX_FORCE,
+      desiredAngleDeg: leftAngle,
+      proportionalGain: 1.05,
+      dampingGain: 3,
+    });
+    this.applyUprightCorrectionForce(lowerBody, rightFoot, {
+      maxForce: this.WALK_SWING_MAX_FORCE,
+      desiredAngleDeg: rightAngle,
+      proportionalGain: 1.05,
+      dampingGain: 3,
+    });
+
+    this.slowlyChangeConstraintLength(
+      this.rig.leftLegConstraintId,
+      this.initialLeftLegLength * clamp(action.leftLegLengthMultiplier, 0.45, 1.65),
+      this.WALK_LEG_CHANGE_LENGTH_PER_SECOND,
+      deltaTime,
+    );
+    this.slowlyChangeConstraintLength(
+      this.rig.rightLegConstraintId,
+      this.initialRightLegLength * clamp(action.rightLegLengthMultiplier, 0.45, 1.65),
+      this.WALK_LEG_CHANGE_LENGTH_PER_SECOND,
+      deltaTime,
+    );
   }
 
   /**

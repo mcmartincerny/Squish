@@ -28,6 +28,9 @@ export interface TrainingRewardWeights {
   distanceWeight: number;
   xOscillationPenalty: number;
   yOscillationPenalty: number;
+  uprightWeight: number;
+  heightPenalty: number;
+  actionChangePenalty: number;
 }
 
 export interface TrainingMetrics {
@@ -40,6 +43,9 @@ export interface TrainingRewardBreakdown {
   distanceContribution: number;
   xOscillationContribution: number;
   yOscillationContribution: number;
+  uprightContribution: number;
+  heightContribution: number;
+  actionChangeContribution: number;
 }
 
 export interface TrainingRewardDefinition {
@@ -73,6 +79,28 @@ export interface TrainingGenerationSummary {
   bestDistanceContribution: number;
   bestXOscillationContribution: number;
   bestYOscillationContribution: number;
+}
+
+export interface TrainingEpisodeHistoryEntry {
+  episodeIndex: number;
+  totalReward: number;
+  movingAverageReward: number;
+  distanceContribution: number;
+  xOscillationContribution: number;
+  yOscillationContribution: number;
+  uprightContribution: number;
+  heightContribution: number;
+  actionChangeContribution: number;
+  finalLowerBodyX: number;
+  steps: number;
+}
+
+export interface TrainingUpdateHistoryEntry {
+  updateIndex: number;
+  policyLoss: number;
+  valueLoss: number;
+  entropy: number;
+  approxKl: number;
 }
 
 export interface TrainingScenarioDefinition {

@@ -328,9 +328,11 @@ input {
 }
 
 .runner-shell {
-  height: 100vh;
+  min-height: 100vh;
+  height: auto;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: start;
   gap: 0.45rem;
   padding: 0.45rem;
 }
@@ -367,9 +369,9 @@ input {
 }
 
 .runner-body {
-  min-height: 0;
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
+  align-items: start;
   gap: 0.45rem;
 }
 
@@ -423,9 +425,9 @@ input {
 }
 
 .runner-main {
-  min-height: 0;
   display: grid;
-  grid-template-rows: minmax(260px, 42vh) minmax(0, 1fr);
+  grid-template-rows: minmax(260px, 520px) auto;
+  align-content: start;
   gap: 0.45rem;
 }
 
@@ -486,7 +488,7 @@ input {
 }
 
 .training-main {
-  grid-template-rows: minmax(260px, 40vh) minmax(0, 1fr);
+  grid-template-rows: minmax(260px, 520px) auto;
 }
 
 .training-results-grid {
@@ -509,6 +511,11 @@ input {
 
 .training-chart {
   min-height: 320px;
+}
+
+.training-chart-stack {
+  display: grid;
+  gap: 0.45rem;
 }
 
 .training-chart__empty {

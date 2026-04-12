@@ -176,17 +176,26 @@ export function SimulationCanvas({
         accumulatorRef.current += elapsedSeconds;
         const beforeStepping = performance.now();
         while (accumulatorRef.current >= FIXED_DELTA_TIME || (ultraSpeedRef.current && (performance.now() - beforeStepping) < 16.666) ) {
-          onBeforeStepRef.current?.(currentWorld, FIXED_DELTA_TIME);
+          const beforeStepWorld = worldRef.current;
+
+          if (!beforeStepWorld) {
+            break;
+          }
+
+          onBeforeStepRef.current?.(beforeStepWorld, FIXED_DELTA_TIME);
+
+          const steppingWorld = worldRef.current ?? beforeStepWorld;
 
           const stepStart = performance.now();
-          currentWorld.step(FIXED_DELTA_TIME, useXPBDSolverRef.current);
+          steppingWorld.step(FIXED_DELTA_TIME, useXPBDSolverRef.current);
           stepDurationsMs.push(performance.now() - stepStart);
           accumulatorRef.current -= FIXED_DELTA_TIME;
         }
       }
 
       const snapshotStart = performance.now();
-      const snapshot = currentWorld.getSnapshot();
+      const snapshotWorld = worldRef.current ?? currentWorld;
+      const snapshot = snapshotWorld.getSnapshot();
       const snapshotMs = performance.now() - snapshotStart;
       const drawStart = performance.now();
       const overlayState = getOverlayStateRef.current?.() ?? {
