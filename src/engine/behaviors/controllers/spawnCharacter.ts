@@ -4,7 +4,6 @@ import { CharacterController, type CharacterConstantsOverride, type CharacterRig
 export interface SpawnCharacterOptions {
   position: Vec2Like;
   layers?: LayerId[];
-  scale?: number;
   stiffness?: number;
   damping?: number;
   tearThreshold?: number | null;
@@ -13,57 +12,56 @@ export interface SpawnCharacterOptions {
 
 export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptions): CharacterController {
   const layers = options.layers;
-  const scale = Math.max(0.5, options.scale ?? 1);
-  const stiffness = options.stiffness ?? 0.28;
+  const stiffness = (options.stiffness ?? 0.28) / 1; // TODO lower stiffness for better walking
   const damping = options.damping ?? 12;
   const tearThreshold = options.tearThreshold ?? null;
-  const torsoLength = 34 * scale;
-  const neckLength = 15 * scale;
-  const armLength = 32 * scale;
-  const legLength = 58 * scale;
-  const footSpacing = 12 * scale;
-  const armSpacing = 10 * scale;
+  const torsoLength = 68;
+  const neckLength = 30;
+  const armLength = 64;
+  const legYLength = 116;
+  const footSpacing = 24;
+  const armSpacing = 20;
 
   const lowerBody = world.createPoint({
     position: options.position,
-    radius: 6 * scale,
-    mass: 1.8 * scale,
+    radius: 12,
+    mass: 3.6,
     layers,
   });
   const upperChest = world.createPoint({
     position: { x: options.position.x, y: options.position.y - torsoLength },
-    radius: 5 * scale,
-    mass: 1.55 * scale,
+    radius: 10,
+    mass: 3.1,
     layers,
   });
   const head = world.createPoint({
     position: { x: options.position.x, y: options.position.y - torsoLength - neckLength },
-    radius: 7 * scale,
-    mass: 0.8 * scale,
+    radius: 14,
+    mass: 1.6,
     layers,
   });
   const leftHand = world.createPoint({
     position: { x: options.position.x - armLength, y: options.position.y - torsoLength + armSpacing * 0.35 },
-    radius: 3 * scale,
-    mass: 0.3 * scale,
+    radius: 6,
+    mass: 0.6,
     layers,
   });
   const rightHand = world.createPoint({
     position: { x: options.position.x + armLength, y: options.position.y - torsoLength + armSpacing * 0.35 },
-    radius: 3 * scale,
-    mass: 0.3 * scale,
+    radius: 6,
+    mass: 0.6,
     layers,
   });
   const leftFoot = world.createPoint({
-    position: { x: options.position.x - footSpacing, y: options.position.y + legLength },
-    radius: 3 * scale,
-    mass: 0.6 * scale,
+    position: { x: options.position.x - footSpacing, y: options.position.y + legYLength },
+    radius: 6,
+    mass: 1.2,
     layers,
   });
   const rightFoot = world.createPoint({
-    position: { x: options.position.x + footSpacing, y: options.position.y + legLength },
-    radius: 3 * scale,
-    mass: 0.6 * scale,
+    position: { x: options.position.x + footSpacing, y: options.position.y + legYLength },
+    radius: 6,
+    mass: 1.2,
     layers,
   });
 
@@ -81,7 +79,7 @@ export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptio
       stiffness,
       damping,
       tearThreshold,
-      collisionRadius: 5 * scale,
+      collisionRadius: 10,
     }),
     spineConstraintId: world.createConstraint({
       pointAId: upperChest,
@@ -89,7 +87,7 @@ export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptio
       stiffness,
       damping,
       tearThreshold,
-      collisionRadius: 5 * scale,
+      collisionRadius: 10,
     }),
     leftArmConstraintId: world.createConstraint({
       pointAId: upperChest,
@@ -97,7 +95,7 @@ export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptio
       stiffness,
       damping,
       tearThreshold,
-      collisionRadius: 2 * scale,
+      collisionRadius: 4,
     }),
     rightArmConstraintId: world.createConstraint({
       pointAId: upperChest,
@@ -105,7 +103,7 @@ export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptio
       stiffness,
       damping,
       tearThreshold,
-      collisionRadius: 2 * scale,
+      collisionRadius: 4,
     }),
     leftLegConstraintId: world.createConstraint({
       pointAId: lowerBody,
@@ -113,7 +111,7 @@ export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptio
       stiffness: stiffness * 0.5,
       damping,
       tearThreshold,
-      collisionRadius: 3 * scale,
+      collisionRadius: 6,
     }),
     rightLegConstraintId: world.createConstraint({
       pointAId: lowerBody,
@@ -121,7 +119,7 @@ export function spawnCharacter(world: PhysicsWorld, options: SpawnCharacterOptio
       stiffness: stiffness * 0.5,
       damping,
       tearThreshold,
-      collisionRadius: (3 * scale) + 0.02,
+      collisionRadius: 6.01,
     }),
   };
 

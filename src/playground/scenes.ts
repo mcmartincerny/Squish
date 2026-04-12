@@ -297,17 +297,18 @@ export function loadBridgeValidationScene(world: PhysicsWorld, settings: Playgro
 
 export function loadCharacterDemoScene(world: PhysicsWorld, settings: PlaygroundSettings): void {
   world.clear();
-  settings.worldWidth = 6500
+  settings.worldWidth = 9000
   syncWorldConfig(world, settings);
 
   createPinnedConnectedPoints(world, settings, createStairPoints(6, 1000, -25, 200, 900));
+  createPinnedConnectedPoints(world, settings, [{ x: 6200, y: 550 }, { x: 7500, y: 1000 }]);
+  createPinnedConnectedPoints(world, settings, [{ x: 7500, y: 1000 }, { x: 8950, y: 400 }]);
 
   const controller = spawnCharacter(world, {
     position: {
       x: 300,
       y: 750,
     },
-    scale: 1.9,
     stiffness: 0.15,
     damping: 1.5,
     tearThreshold: null,

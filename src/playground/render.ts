@@ -152,6 +152,23 @@ export function drawWorld(
     context.fill();
   }
 
+  for (const line of snapshot.debugLines) {
+    context.strokeStyle = line.color;
+    context.lineWidth = line.radius * 2;
+    context.setLineDash([]);
+    context.beginPath();
+    context.moveTo(line.x1, line.y1);
+    context.lineTo(line.x2, line.y2);
+    context.stroke();
+  }
+
+  for (const dp of snapshot.debugPoints) {
+    context.fillStyle = dp.color;
+    context.beginPath();
+    context.arc(dp.x, dp.y, dp.radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
   if (previewLine) {
     context.strokeStyle = previewLine.color ?? "#ffd76a";
     context.lineWidth = 2 / camera.zoom;

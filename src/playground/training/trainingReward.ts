@@ -24,7 +24,7 @@ export function getTrainingRewardDefinitionById(id: string): TrainingRewardDefin
 }
 
 export function readTrainingMetrics(world: PhysicsWorld, controller: CharacterController): TrainingMetrics {
-  const lowerBodyPoint = world.getPoint(controller.rig.lowerBodyId);
+  const lowerBodyPoint = world.getPointSnapshot(controller.rig.lowerBodyId);
   return {
     lowerBodyPositionX: lowerBodyPoint?.position.x ?? 0,
     lowerBodyXOscillations: controller.lowerBodyXOscillations,

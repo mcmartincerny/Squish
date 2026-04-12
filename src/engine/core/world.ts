@@ -7,6 +7,7 @@ import type {
   CreateConstraintOptions,
   CreatePointOptions,
   CreateWorldOptions,
+  DebugDrawMetadata,
   GridCellSnapshot,
   LayerId,
   PhysicsWorld,
@@ -19,13 +20,15 @@ import type {
   SetPointPositionOptions,
   WorldController,
   WorldConfig,
+  WorldDebugLine,
+  WorldDebugPoint,
   WorldSnapshot,
 } from "../entities/types.ts";
 import { normalizePointLayers, resolveConstraintLayer } from "./layers.ts";
 import { closestPointOnSegment } from "../math/geometry.ts";
 import { cloneVec2, distance } from "../math/vector.ts";
 
-interface PointState {
+export interface PointState {
   id: PointId;
   x: number;
   y: number;
@@ -41,7 +44,7 @@ interface PointState {
   ignoredConstraintIds: Set<ConstraintId>;
 }
 
-interface ConstraintState {
+export interface ConstraintState {
   id: ConstraintId;
   pointAId: PointId;
   pointBId: PointId;
@@ -86,11 +89,57 @@ function toWorldConfig(options: CreateWorldOptions): WorldConfig {
   };
 }
 
+function takeDebugPointsSnapshotAndTickLifespans(scratch: WorldDebugPoint[]): WorldDebugPoint[] {
+  const out: WorldDebugPoint[] = [];
+  let write = 0;
+
+  for (let i = 0; i < scratch.length; i += 1) {
+    const e = scratch[i];
+    const nextLifespan = e.lifespan - 1;
+    out.push({ x: e.x, y: e.y, radius: e.radius, color: e.color, lifespan: nextLifespan });
+
+    if (e.lifespan === 1) {
+      continue;
+    }
+
+    e.lifespan = nextLifespan;
+    scratch[write] = e;
+    write += 1;
+  }
+
+  scratch.length = write;
+  return out;
+}
+
+function takeDebugLinesSnapshotAndTickLifespans(scratch: WorldDebugLine[]): WorldDebugLine[] {
+  const out: WorldDebugLine[] = [];
+  let write = 0;
+
+  for (let i = 0; i < scratch.length; i += 1) {
+    const e = scratch[i];
+    const nextLifespan = e.lifespan - 1;
+    out.push({ x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2, radius: e.radius, color: e.color, lifespan: nextLifespan });
+
+    if (e.lifespan === 1) {
+      continue;
+    }
+
+    e.lifespan = nextLifespan;
+    scratch[write] = e;
+    write += 1;
+  }
+
+  scratch.length = write;
+  return out;
+}
+
 class SoftBodyWorld implements PhysicsWorld {
   private readonly points: Array<PointState | undefined> = [];
   private readonly constraints: Array<ConstraintState | undefined> = [];
   private readonly controllers = new Set<WorldController>();
   private readonly broadphase: SpatialHashGrid;
+  private readonly debugPointsScratch: WorldDebugPoint[] = [];
+  private readonly debugLinesScratch: WorldDebugLine[] = [];
 
   private maxColliderRadius = 0;
   private config: WorldConfig;
@@ -159,12 +208,20 @@ class SoftBodyWorld implements PhysicsWorld {
     this.controllers.delete(controller);
   }
 
-  getPoint(pointId: PointId): PointSnapshot | null {
+  getPoint(pointId: PointId): PointState | null {
+    return this.points[pointId] ?? null;
+  }
+
+  getConstraint(constraintId: ConstraintId): ConstraintState | null {
+    return this.constraints[constraintId] ?? null;
+  }
+
+  getPointSnapshot(pointId: PointId): PointSnapshot | null {
     const point = this.points[pointId];
     return point ? toPointSnapshot(point) : null;
   }
 
-  getConstraint(constraintId: ConstraintId): ConstraintSnapshot | null {
+  getConstraintSnapshot(constraintId: ConstraintId): ConstraintSnapshot | null {
     const constraint = this.constraints[constraintId];
 
     if (!constraint) {
@@ -269,7 +326,7 @@ class SoftBodyWorld implements PhysicsWorld {
       return null;
     }
 
-    this.rebuildBroadphase(); // Might be stupid to do it every time
+    this.rebuildBroadphase(); // Might be stupid to do it every time - could increase performance if we would do it only once and invalidate it after integrate and after solvers
 
     const directionX = options.direction.x / directionLength;
     const directionY = options.direction.y / directionLength;
@@ -342,6 +399,20 @@ class SoftBodyWorld implements PhysicsWorld {
     };
   }
 
+  debugPoint(x: number, y: number, metadata?: DebugDrawMetadata): void {
+    const radius = metadata?.radius ?? 3;
+    const color = metadata?.color ?? "red";
+    const lifespan = Math.max(1, Math.floor(metadata?.lifespan ?? 1));
+    this.debugPointsScratch.push({ x, y, radius, color, lifespan });
+  }
+
+  debugLine(x1: number, y1: number, x2: number, y2: number, metadata?: DebugDrawMetadata): void {
+    const radius = metadata?.radius ?? 1;
+    const color = metadata?.color ?? "orange";
+    const lifespan = Math.max(1, Math.floor(metadata?.lifespan ?? 1));
+    this.debugLinesScratch.push({ x1, y1, x2, y2, radius, color, lifespan });
+  }
+
   getSnapshot(): WorldSnapshot {
     this.rebuildBroadphase();
 
@@ -374,11 +445,16 @@ class SoftBodyWorld implements PhysicsWorld {
       constraints.push(toConstraintSnapshot(constraint, currentLength));
     }
 
+    const debugPoints = takeDebugPointsSnapshotAndTickLifespans(this.debugPointsScratch);
+    const debugLines = takeDebugLinesSnapshotAndTickLifespans(this.debugLinesScratch);
+
     return {
       config: this.getConfig(),
       points,
       constraints,
       gridCells,
+      debugPoints,
+      debugLines,
     };
   }
 
@@ -416,6 +492,8 @@ class SoftBodyWorld implements PhysicsWorld {
     this.constraints.length = 0;
     this.controllers.clear();
     this.maxColliderRadius = 0;
+    this.debugPointsScratch.length = 0;
+    this.debugLinesScratch.length = 0;
     this.broadphase.clear();
   }
 

@@ -1,3 +1,5 @@
+import type { ConstraintState, PointState } from "../core/world";
+
 export interface Vec2Like {
   x: number;
   y: number;
@@ -132,11 +134,41 @@ export interface GridCellSnapshot {
   layer?: LayerId;
 }
 
+/** Optional radius (world units), color, and lifespan (getSnapshot calls, default 1); other keys for tagging. */
+export type DebugDrawMetadata = {
+  radius?: number;
+  color?: string;
+  /** How many consecutive `getSnapshot` calls include this draw; default 1. */
+  lifespan?: number;
+} & Record<string, string | number | undefined>;
+
+export interface WorldDebugPoint {
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+  /** Remaining lifespan after this snapshot (0 = last frame). */
+  lifespan: number;
+}
+
+export interface WorldDebugLine {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  radius: number;
+  color: string;
+  /** Remaining lifespan after this snapshot (0 = last frame). */
+  lifespan: number;
+}
+
 export interface WorldSnapshot {
   config: WorldConfig;
   points: PointSnapshot[];
   constraints: ConstraintSnapshot[];
   gridCells: GridCellSnapshot[];
+  debugPoints: WorldDebugPoint[];
+  debugLines: WorldDebugLine[];
 }
 
 export interface PhysicsWorld {
@@ -144,8 +176,10 @@ export interface PhysicsWorld {
   createConstraint(options: CreateConstraintOptions): ConstraintId;
   registerController(controller: WorldController): void;
   deregisterController(controller: WorldController): void;
-  getPoint(pointId: PointId): PointSnapshot | null;
-  getConstraint(constraintId: ConstraintId): ConstraintSnapshot | null;
+  getPoint(pointId: PointId): PointState | null;
+  getConstraint(constraintId: ConstraintId): ConstraintState | null;
+  getPointSnapshot(pointId: PointId): PointSnapshot | null;
+  getConstraintSnapshot(constraintId: ConstraintId): ConstraintSnapshot | null;
   setPointPosition(options: SetPointPositionOptions): void;
   setConstraintRestLength(options: SetConstraintRestLengthOptions): void;
   setPointIgnoredConstraints(options: SetPointIgnoredConstraintsOptions): void;
@@ -157,6 +191,8 @@ export interface PhysicsWorld {
   setConfig(config: Partial<WorldConfig>): void;
   getConfig(): WorldConfig;
   getSnapshot(): WorldSnapshot;
+  debugPoint(x?: number, y?: number, metadata?: DebugDrawMetadata): void;
+  debugLine(x1: number, y1: number, x2: number, y2: number, metadata?: DebugDrawMetadata): void;
   step(deltaTime: number, useXPBDSolver?: boolean): void;
   clear(): void;
 }

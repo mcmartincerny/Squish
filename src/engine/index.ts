@@ -8,6 +8,7 @@ export type {
   CreateConstraintOptions,
   CreatePointOptions,
   CreateWorldOptions,
+  DebugDrawMetadata,
   GridCellSnapshot,
   LayerId,
   PhysicsWorld,
@@ -22,5 +23,7 @@ export type {
   Vec2Like,
   WorldController,
   WorldConfig,
+  WorldDebugLine,
+  WorldDebugPoint,
   WorldSnapshot,
 } from './entities/types.ts'
